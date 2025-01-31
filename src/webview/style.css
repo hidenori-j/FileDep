@@ -1,0 +1,67 @@
+body { 
+    margin: 0;
+    padding: 0;
+    background: var(--vscode-editor-background);
+    color: var(--vscode-editor-foreground);
+}
+#graph { 
+    width: 100%; 
+    height: 100vh;
+    overflow: hidden;
+}
+.node circle {
+    fill: #4CAF50;
+    stroke: #fff;
+    stroke-width: 2px;
+}
+.node text {
+    font-size: 12px;
+    fill: var(--vscode-editor-foreground);
+    font-family: var(--vscode-font-family);
+}
+.link {
+    stroke: var(--vscode-editor-foreground);
+    stroke-opacity: 0.3;
+    stroke-width: 1px;
+}
+svg {
+    background-color: transparent;
+}
+.tooltip {
+    position: absolute;
+    padding: 8px;
+    background: var(--vscode-editor-background);
+    border: 1px solid var(--vscode-editor-foreground);
+    border-radius: 4px;
+    pointer-events: none;
+    font-size: 12px;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+.control-button {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: none;
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    cursor: pointer;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.control-button:hover {
+    background: var(--vscode-button-hoverBackground);
+}
+.icon {
+    font-size: 20px;
+}
+.node.css-file path {
+    fill: #4CAF50;
+    stroke: #fff;
+    stroke-width: 2px;
+} 
