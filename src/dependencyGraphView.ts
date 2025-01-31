@@ -159,14 +159,40 @@ export class DependencyGraphView {
                         opacity: 0;
                         transition: opacity 0.2s;
                     }
+                    .control-button {
+                        position: fixed;
+                        bottom: 20px;
+                        right: 20px;
+                        width: 40px;
+                        height: 40px;
+                        border-radius: 50%;
+                        border: none;
+                        background: var(--vscode-button-background);
+                        color: var(--vscode-button-foreground);
+                        cursor: pointer;
+                        z-index: 1000;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                    }
+                    .control-button:hover {
+                        background: var(--vscode-button-hoverBackground);
+                    }
+                    .icon {
+                        font-size: 20px;
+                    }
                 </style>
             </head>
             <body>
                 <div id="graph"></div>
                 <div class="tooltip"></div>
+                <button id="toggleForce" class="control-button">
+                    <span class="icon">🔗</span>
+                </button>
                 <script>
                     const graphData = ${graphDataStr};
                     let simulation;
+                    let isForceEnabled = false;
                     
                     window.addEventListener('load', () => {
                         const width = window.innerWidth;
@@ -195,12 +221,18 @@ export class DependencyGraphView {
                         d3.select('#graph svg').call(zoom);
 
                         simulation = d3.forceSimulation(graphData.nodes)
-                            .force('link', d3.forceLink(graphData.links).id(d => d.id).distance(100))
-                            .force('charge', d3.forceManyBody().strength(-300))
+                            .force('link', d3.forceLink(graphData.links)
+                                .id(d => d.id)
+                                .distance(150)  // リンクの長さを増加
+                                .strength(1))   // リンクの強さを増加
+                            .force('charge', d3.forceManyBody()
+                                .strength(-1000)  // 反発力を強く
+                                .distanceMax(500)) // 反発力の最大距離を設定
                             .force('center', d3.forceCenter(width / 2, height / 2))
-                            .force('collision', d3.forceCollide().radius(50))
-                            .alphaTarget(0)
-                            .alphaDecay(0.1);
+                            .force('collision', d3.forceCollide().radius(80)) // 衝突半径を増加
+                            .alpha(1)           // 初期アルファ値を1に設定
+                            .alphaDecay(0.01)   // アルファ値の減衰を遅く
+                            .alphaMin(0.001);   // 停止条件を厳しく
 
                         const link = svg.append('g')
                             .selectAll('line')
@@ -254,9 +286,19 @@ export class DependencyGraphView {
                             node.attr('transform', d => \`translate(\${d.x},\${d.y})\`);
                         });
 
+                        simulation.on("end", () => {
+                            simulation.force('link', null);
+                            simulation.force('charge', null);
+                            simulation.force('center', null);
+                            simulation.force('collision', null);
+                            simulation.stop();
+                        });
+
                         function dragstarted(event, d) {
                             if (!event.active) {
-                                simulation.alphaTarget(0.3).restart();
+                                simulation.alphaTarget(0.3)
+                                    .force('collision', d3.forceCollide().radius(50))
+                                    .restart();
                             }
                             d.fx = d.x;
                             d.fy = d.y;
@@ -270,13 +312,47 @@ export class DependencyGraphView {
                         function dragended(event, d) {
                             if (!event.active) {
                                 simulation.alphaTarget(0);
+                                if (!isForceEnabled) {
+                                    simulation.force('link', null)
+                                        .force('charge', null)
+                                        .force('center', null)
+                                        .force('collision', null)
+                                        .stop();
+                                }
                             }
+                            d.x = d.fx;
+                            d.y = d.fy;
                             d.fx = null;
                             d.fy = null;
                         }
 
-                        simulation.on("end", () => {
-                            simulation.stop();
+                        const toggleForceButton = document.getElementById('toggleForce');
+                        toggleForceButton.addEventListener('click', () => {
+                            isForceEnabled = !isForceEnabled;
+                            if (isForceEnabled) {
+                                // フォースを再有効化
+                                simulation
+                                    .force('link', d3.forceLink(graphData.links)
+                                        .id(d => d.id)
+                                        .distance(150)
+                                        .strength(1))
+                                    .force('charge', d3.forceManyBody()
+                                        .strength(-1000)
+                                        .distanceMax(500))
+                                    .force('center', d3.forceCenter(width / 2, height / 2))
+                                    .force('collision', d3.forceCollide().radius(80))
+                                    .alpha(0.3)
+                                    .restart();
+                                toggleForceButton.style.background = 'var(--vscode-button-secondaryBackground)';
+                            } else {
+                                // フォースを無効化
+                                simulation.force('link', null)
+                                    .force('charge', null)
+                                    .force('center', null)
+                                    .force('collision', null)
+                                    .stop();
+                                toggleForceButton.style.background = 'var(--vscode-button-background)';
+                            }
                         });
                     });
                 </script>
