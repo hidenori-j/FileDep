@@ -6,6 +6,32 @@ let height: number;
 let graphData: GraphData;
 let toggleForceButton: HTMLButtonElement;
 
+interface GraphNode {
+    id: string | number;
+    name: string;
+    fullPath: string;
+    dirPath: string;
+    connections: number;
+    x?: number;
+    y?: number;
+    fx?: number | null;
+    fy?: number | null;
+}
+
+interface GraphLink {
+    source: string | number;
+    target: string | number;
+}
+
+interface GraphData {
+    nodes: GraphNode[];
+    links: GraphLink[];
+}
+
+declare const vscode: {
+    postMessage: (message: any) => void;
+};
+
 // メインの初期化関数
 window.addEventListener('load', () => {
     try {
@@ -26,9 +52,10 @@ window.addEventListener('load', () => {
             throw new Error('Toggle force button not found');
         }
         
+        console.log('Initializing graph with data:', graphData); // デバッグ用
         initializeGraph(graphData);
         
-        // イベントリスナーの設定をここに移動
+        // イベントリスナーの設定
         window.addEventListener('resize', handleResize);
         toggleForceButton.addEventListener('click', handleToggleForce);
     } catch (error) {
@@ -37,6 +64,7 @@ window.addEventListener('load', () => {
 });
 
 function initializeGraph(data: GraphData): void {
+    console.log('InitializeGraph called with data:', data); // デバッグ用
     const graphDiv = document.getElementById('graph');
     if (!graphDiv) return;
     
@@ -49,33 +77,70 @@ function initializeGraph(data: GraphData): void {
         .attr('height', height)
         .append('g');
 
-    // ... 残りのコードは同じですが、以下のような型付けを追加 ...
-    
-    const zoom = d3.zoom<SVGSVGElement, unknown>()
-        .scaleExtent([0.1, 4])
-        .filter((event: any) => {
-            return event.shiftKey || event.type === 'wheel';
-        })
-        .on('zoom', (event: d3.D3ZoomEvent<SVGSVGElement, unknown>) => {
-            svg.attr('transform', event.transform.toString());
-        });
+    const zoom = d3.zoom<SVGSVGElement, unknown>();
+    d3.select<SVGSVGElement, unknown>('#graph svg')
+        .call(zoom
+            .scaleExtent([0.1, 4])
+            .filter((event: any) => event.shiftKey || event.type === 'wheel')
+            .on('zoom', (event) => {
+                svg.attr('transform', event.transform.toString());
+            })
+        );
 
-    // ノードとリンクの型付け
+    simulation = d3.forceSimulation<GraphNode>(data.nodes)
+        .force('link', d3.forceLink<GraphNode, GraphLink>(data.links)
+            .id(d => d.id)
+            .distance(150)
+            .strength(1))
+        .force('charge', d3.forceManyBody()
+            .strength(-1000)
+            .distanceMax(500))
+        .force('center', d3.forceCenter(width / 2, height / 2))
+        .force('collision', d3.forceCollide().radius(80));
+
     const link = svg.append('g')
-        .selectAll<SVGLineElement, GraphLink>('line')
+        .selectAll('line')
         .data(data.links)
         .enter()
         .append('line')
         .attr('class', 'link');
 
     const node = svg.append('g')
-        .selectAll<SVGGElement, GraphNode>('g')
+        .selectAll('g')
         .data(data.nodes)
         .enter()
         .append('g')
-        .attr('class', (d: GraphNode) => 'node' + (d.name.endsWith('.css') ? ' css-file' : ''));
+        .attr('class', d => 'node')
+        .call(d3.drag<SVGGElement, GraphNode>()
+            .on('start', dragstarted)
+            .on('drag', dragged)
+            .on('end', dragended));
 
-    // ... 残りのコードも同様に型付けを追加 ...
+    node.append('circle')
+        .attr('r', d => 5 + Math.min(10, d.connections * 2));
+
+    node.append('text')
+        .attr('dx', 12)
+        .attr('dy', '.35em')
+        .text(d => d.name);
+
+    simulation.on('tick', () => {
+        link
+            .attr('x1', d => ((d.source as unknown) as GraphNode).x || 0)
+            .attr('y1', d => ((d.source as unknown) as GraphNode).y || 0)
+            .attr('x2', d => ((d.target as unknown) as GraphNode).x || 0)
+            .attr('y2', d => ((d.target as unknown) as GraphNode).y || 0);
+
+        node.attr('transform', d => `translate(${d.x || 0},${d.y || 0})`);
+    });
+
+    // ノードのダブルクリックイベントを追加
+    node.on('dblclick', (event, d) => {
+        vscode.postMessage({
+            command: 'openFile',
+            filePath: d.fullPath
+        });
+    });
 }
 
 // イベントハンドラーの型定義
@@ -131,4 +196,73 @@ function cleanup(): void {
     toggleForceButton?.removeEventListener('click', handleToggleForce);
 }
 
-window.addEventListener('unload', cleanup); 
+window.addEventListener('unload', cleanup);
+
+// グラフの初期設定
+const container = document.getElementById('network') as HTMLElement;
+const options = {
+    nodes: {
+        shape: 'box',
+        margin: 10,
+        font: {
+            size: 14
+        }
+    },
+    edges: {
+        arrows: 'to',
+        smooth: {
+            type: 'cubicBezier'
+        }
+    },
+    physics: {
+        enabled: true,
+        solver: 'forceAtlas2Based'
+    }
+};
+
+let network: vis.Network;
+
+// ダブルクリックイベントの型定義を追加
+interface NetworkClickEvent {
+    nodes: string[];
+    edges: string[];
+    event: Event;
+}
+
+// メッセージハンドラーの設定
+window.addEventListener('message', event => {
+    const message = event.data;
+    switch (message.command) {
+        case 'updateDependencyGraph':
+            const graphData = {
+                nodes: message.data.nodes.map((node: any) => ({
+                    id: node.id,
+                    name: node.label,
+                    connections: 1
+                })),
+                links: message.data.edges.map((edge: any) => ({
+                    source: edge.from,
+                    target: edge.to
+                }))
+            };
+            initializeGraph(graphData);
+            break;
+    }
+});
+
+function dragstarted(event: d3.D3DragEvent<SVGGElement, GraphNode, GraphNode>, d: GraphNode) {
+    if (!event.active && simulation) simulation.alphaTarget(0.3).restart();
+    d.fx = d.x;
+    d.fy = d.y;
+}
+
+function dragged(event: d3.D3DragEvent<SVGGElement, GraphNode, GraphNode>, d: GraphNode) {
+    d.fx = event.x;
+    d.fy = event.y;
+}
+
+function dragended(event: d3.D3DragEvent<SVGGElement, GraphNode, GraphNode>, d: GraphNode) {
+    if (!event.active && simulation) simulation.alphaTarget(0);
+    d.fx = null;
+    d.fy = null;
+} 

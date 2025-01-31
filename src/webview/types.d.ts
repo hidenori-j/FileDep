@@ -46,4 +46,27 @@ declare module 'd3' {
         radius(radius: number): this;
         distanceMax(max: number): this;
     }
+}
+
+declare namespace vis {
+    class Network {
+        constructor(
+            container: HTMLElement,
+            data: { nodes: DataSet<any>; edges: DataSet<any> },
+            options?: any
+        );
+        
+        on(event: string, callback: (params: NetworkEvents) => void): void;
+        setData(data: { nodes: DataSet<any>; edges: DataSet<any> }): void;
+    }
+
+    class DataSet<T> {
+        constructor(data: T[]);
+    }
+
+    interface NetworkEvents {
+        nodes: string[];
+        edges: string[];
+        event: Event;
+    }
 } 

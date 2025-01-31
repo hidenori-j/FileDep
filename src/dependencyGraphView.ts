@@ -30,15 +30,13 @@ export class DependencyGraphView {
                 enableScripts: true,
                 retainContextWhenHidden: true,
                 localResourceRoots: [
-                    this.extensionUri,
-                    vscode.Uri.parse('https://d3js.org/')
+                    this.extensionUri
                 ]
             }
         );
 
         await this.provider.updateDependencies();
         const dependencies = this.provider.getDependencies();
-        
         const graphData = this.convertToGraphData(dependencies);
         
         this.panel.webview.html = this.getWebviewContent(graphData);
@@ -122,32 +120,45 @@ export class DependencyGraphView {
     }
 
     private getWebviewContent(graphData: any) {
-        const htmlPath = path.join(this.extensionUri.fsPath, 'src', 'webview', 'dependencyGraph.html');
-        const cssPath = path.join(this.extensionUri.fsPath, 'src', 'webview', 'style.css');
-        const jsPath = path.join(this.extensionUri.fsPath, 'src', 'webview', 'script.js');
+        const webview = this.panel!.webview;
+        const scriptUri = webview.asWebviewUri(
+            vscode.Uri.joinPath(this.extensionUri, 'out', 'webview', 'script.js')
+        );
+        const styleUri = webview.asWebviewUri(
+            vscode.Uri.joinPath(this.extensionUri, 'src', 'webview', 'style.css')
+        );
 
-        let html = fs.readFileSync(htmlPath, 'utf-8');
-        const css = fs.readFileSync(cssPath, 'utf-8');
-        const js = fs.readFileSync(jsPath, 'utf-8');
+        // CSPをより寛容に設定
+        const nonce = getNonce();
+        const csp = `
+            default-src 'none';
+            img-src ${webview.cspSource} https: data:;
+            script-src ${webview.cspSource} https: 'unsafe-inline' 'unsafe-eval';
+            style-src ${webview.cspSource} https: 'unsafe-inline';
+            font-src ${webview.cspSource} https:;
+        `;
 
-        // WebViewのリソースURIを取得
-        const cssUri = this.panel!.webview.asWebviewUri(vscode.Uri.file(cssPath));
-        const jsUri = this.panel!.webview.asWebviewUri(vscode.Uri.file(jsPath));
-
-        // HTMLにグラフデータを注入
-        html = html.replace('</head>', `
-            <style>${css}</style>
-            <script id="graphData" type="application/json">${JSON.stringify(graphData)}</script>
+        return `<!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <meta http-equiv="Content-Security-Policy" content="${csp}">
+                <title>依存関係グラフ</title>
+                <script src="https://d3js.org/d3.v7.min.js"></script>
+                <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+                <link rel="stylesheet" href="${styleUri}">
+                <script id="graphData" type="application/json">${JSON.stringify(graphData)}</script>
             </head>
-        `);
-
-        // スクリプトを注入
-        html = html.replace('</body>', `
-            <script>${js}</script>
+            <body>
+                <div id="graph"></div>
+                <div class="tooltip"></div>
+                <button id="toggleForce" class="control-button">
+                    <span class="icon">🔗</span>
+                </button>
+                <script src="${scriptUri}"></script>
             </body>
-        `);
-
-        return html;
+            </html>`;
     }
 
     private async updateGraph(): Promise<void> {
@@ -158,4 +169,13 @@ export class DependencyGraphView {
             this.panel.webview.postMessage({ command: 'updateGraph', data: graphData });
         }
     }
+}
+
+function getNonce() {
+    let text = '';
+    const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    for (let i = 0; i < 32; i++) {
+        text += possible.charAt(Math.floor(Math.random() * possible.length));
+    }
+    return text;
 } 
