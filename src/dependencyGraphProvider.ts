@@ -57,27 +57,47 @@ export class DependencyGraphProvider {
             const resolvedImports = imports.map(importPath => {
                 if (importPath.startsWith('.')) {
                     // 相対パスを解決
-                    return path.resolve(path.dirname(filePath), importPath);
+                    const resolvedPath = path.resolve(path.dirname(filePath), importPath);
+                    
+                    // JSX/TSXファイルのインポートの場合、拡張子がない可能性がある
+                    if (!path.extname(resolvedPath)) {
+                        const extensions = ['.tsx', '.jsx', '.ts', '.js'];
+                        for (const ext of extensions) {
+                            const pathWithExt = resolvedPath + ext;
+                            if (fs.existsSync(pathWithExt)) {
+                                return pathWithExt;
+                            }
+                        }
+                        // index.tsx/jsx のチェック
+                        for (const ext of extensions) {
+                            const indexPath = path.join(resolvedPath, `index${ext}`);
+                            if (fs.existsSync(indexPath)) {
+                                return indexPath;
+                            }
+                        }
+                    }
+                    return resolvedPath;
                 }
-                // node_modulesからのインポートは除外
                 return null;
             }).filter(Boolean) as string[];
 
-            // ファイル拡張子を補完
-            const fullImports = resolvedImports.map(importPath => {
-                if (fs.existsSync(importPath)) {
-                    return importPath;
+            // 存在するファイルのみをフィルタリング
+            const fullImports = resolvedImports.filter(importPath => {
+                try {
+                    return fs.existsSync(importPath) || 
+                           fs.existsSync(importPath + '.tsx') || 
+                           fs.existsSync(importPath + '.jsx') || 
+                           fs.existsSync(importPath + '.ts') || 
+                           fs.existsSync(importPath + '.js') ||
+                           fs.existsSync(path.join(importPath, 'index.tsx')) ||
+                           fs.existsSync(path.join(importPath, 'index.jsx')) ||
+                           fs.existsSync(path.join(importPath, 'index.ts')) ||
+                           fs.existsSync(path.join(importPath, 'index.js'));
+                } catch (error) {
+                    console.error('Error checking file existence:', importPath, error);
+                    return false;
                 }
-                // 拡張子を試す
-                const extensions = ['.ts', '.tsx', '.js', '.jsx'];
-                for (const ext of extensions) {
-                    const pathWithExt = importPath + ext;
-                    if (fs.existsSync(pathWithExt)) {
-                        return pathWithExt;
-                    }
-                }
-                return null;
-            }).filter(Boolean) as string[];
+            });
 
             console.log('File:', filePath);
             console.log('Found imports:', fullImports);
@@ -95,12 +115,14 @@ export class DependencyGraphProvider {
 
         // import文のパターン
         const patterns = [
-            // ES6 imports
+            // ES6 imports（デフォルトインポート、名前付きインポート、全てインポート）
             /import\s+(?:(?:\{[^}]*\}|\*\s+as\s+[^,\s]+|\w+)\s+from\s+)?['"]([^'"]+)['"]/g,
             // require
             /require\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
             // dynamic import
-            /import\s*\(\s*['"]([^'"]+)['"]\s*\)/g
+            /import\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
+            // JSXのコンポーネントインポート
+            /(?:import|from)\s+['"]([^'"]+)['"]/g
         ];
 
         patterns.forEach(pattern => {
