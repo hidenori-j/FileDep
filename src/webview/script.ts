@@ -113,24 +113,25 @@ function initializeGraph(data: GraphData): void {
         );
 
     simulation = d3.forceSimulation<GraphNode>(data.nodes)
-        .force('link', d3.forceLink<GraphNode, GraphLink>(
-            // CSSファイルに関連するリンクを除外
-            data.links.filter(d => {
+        .force('link', d3.forceLink<GraphNode, GraphLink>(data.links)
+            .id(d => d.id)
+            .distance(d => {
                 const source = data.nodes.find(n => n.id === d.source);
                 const target = data.nodes.find(n => n.id === d.target);
-                const isCssRelated = source && target && (isCssFile(source) || isCssFile(target));
-                const toggleCssCheckbox = document.getElementById('toggleCss') as HTMLInputElement;
-                return !isCssRelated || toggleCssCheckbox?.checked;
+                const baseDistance = 100;
+                const scale = Math.max(
+                    source ? Math.sqrt(source.connections) : 1,
+                    target ? Math.sqrt(target.connections) : 1
+                );
+                return baseDistance * (1 + scale * 0.4);
             })
-        )
-        .id(d => d.id)
-        .distance(150)
-        .strength(1))
-        .force('charge', d3.forceManyBody()
-            .strength(-1000)
-            .distanceMax(500))
+            .strength(0.5))
+        .force('charge', d3.forceManyBody<GraphNode>()
+            .strength(d => -500 - (d.connections || 0) * 200)
+            .distanceMax(300))
         .force('center', d3.forceCenter(width / 2, height / 2))
-        .force('collision', d3.forceCollide().radius(80));
+        .force('collision', d3.forceCollide<GraphNode>()
+            .radius(d => 20 + Math.sqrt(d.connections || 0) * 10));
 
     const link = svg.append('g')
         .selectAll('line')
@@ -159,13 +160,13 @@ function initializeGraph(data: GraphData): void {
     node.each(function(this: SVGGElement, d: GraphNode) {
         const element = d3.select<SVGGElement, GraphNode>(this);
         if (isCssFile(d)) {
-            const size = 10 + Math.min(10, d.connections * 2);
+            const size = (8 + Math.sqrt(d.connections) * 6) * 0.75;
             element.append('path')
                 .attr('d', `M0,${size} L${size},${-size} L${-size},${-size} Z`)
                 .attr('class', 'node-shape');
         } else {
             element.append('circle')
-                .attr('r', d => 5 + Math.min(10, d.connections * 2))
+                .attr('r', d => 5 + Math.sqrt(d.connections) * 4)
                 .attr('class', 'node-shape');
         }
     });
@@ -191,6 +192,21 @@ function initializeGraph(data: GraphData): void {
             command: 'openFile',
             filePath: d.fullPath
         });
+    });
+
+    // ノードのマウスオーバーイベントを追加
+    node.on('mouseover', (event, d) => {
+        tooltip.transition()
+            .duration(200)
+            .style('opacity', .9);
+        tooltip.html(d.dirPath)
+            .style('left', (event.pageX + 10) + 'px')
+            .style('top', (event.pageY - 28) + 'px');
+    })
+    .on('mouseout', () => {
+        tooltip.transition()
+            .duration(500)
+            .style('opacity', 0);
     });
 }
 
