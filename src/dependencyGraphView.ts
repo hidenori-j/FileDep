@@ -45,6 +45,9 @@ export class DependencyGraphView {
             if (message.command === 'requestData') {
                 this.updateGraph();
             }
+            if (message.command === 'toggleCss') {
+                this.handleCssToggle(message.checked);
+            }
         });
 
         this.panel.onDidDispose(() => {
@@ -153,9 +156,15 @@ export class DependencyGraphView {
             <body>
                 <div id="graph"></div>
                 <div class="tooltip"></div>
-                <button id="toggleForce" class="control-button">
-                    <span class="icon">🔗</span>
-                </button>
+                <div class="controls">
+                    <button id="toggleForce" class="control-button">
+                        <span class="icon">🔗</span>
+                    </button>
+                    <label class="control-checkbox">
+                        <input type="checkbox" id="toggleCss" checked>
+                        CSS表示
+                    </label>
+                </div>
                 <script src="${scriptUri}"></script>
             </body>
             </html>`;
@@ -168,6 +177,32 @@ export class DependencyGraphView {
             const graphData = this.convertToGraphData(dependencies);
             this.panel.webview.postMessage({ command: 'updateGraph', data: graphData });
         }
+    }
+
+    private async handleCssToggle(checked: boolean) {
+        this.provider.setIncludeCss(checked);
+        await this.provider.updateDependencies();
+        const dependencies = this.provider.getDependencies();
+        const graphData = {
+            nodes: Array.from(dependencies.keys()).map(path => ({
+                id: path,
+                name: path.split(/[\\/]/).pop() || '',  // Windows対応のため修正
+                fullPath: path,
+                dirPath: path.split(/[\\/]/).slice(0, -1).join('/'),
+                connections: dependencies.get(path)?.length || 0
+            })),
+            links: Array.from(dependencies.entries()).flatMap(([source, targets]) =>
+                targets.map(target => ({
+                    source,
+                    target
+                }))
+            )
+        };
+        
+        this.panel?.webview.postMessage({ 
+            command: 'updateDependencyGraph',
+            data: graphData
+        });
     }
 }
 

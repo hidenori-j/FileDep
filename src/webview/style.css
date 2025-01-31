@@ -74,4 +74,29 @@ svg {
     fill: #4CAF50;
     stroke: #fff;
     stroke-width: 2px;
+}
+.controls {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+.control-checkbox {
+    background: var(--vscode-button-background);
+    padding: 5px 10px;
+    border-radius: 4px;
+    color: var(--vscode-button-foreground);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+.node.css-file.hidden {
+    visibility: hidden;
+    opacity: 0;
+}
+.link.css-related.hidden {
+    visibility: hidden;
+    opacity: 0;
 } 

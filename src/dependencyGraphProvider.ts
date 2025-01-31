@@ -4,6 +4,7 @@ import * as fs from 'fs';
 
 export class DependencyGraphProvider {
     private dependencies: Map<string, string[]> = new Map();
+    private includeCss: boolean = true;  // 追加: CSSファイルを含めるかどうかのフラグ
 
     public async updateDependencies() {
         const workspaceFolders = vscode.workspace.workspaceFolders;
@@ -37,6 +38,10 @@ export class DependencyGraphProvider {
                         await this.scanDirectory(fullPath);
                     }
                 } else if (this.isTargetFile(file)) {
+                    // CSSファイルを含めない場合はスキップ
+                    if (!this.includeCss && fullPath.toLowerCase().endsWith('.css')) {
+                        continue;
+                    }
                     await this.analyzeDependencies(fullPath);
                 }
             }
@@ -99,6 +104,11 @@ export class DependencyGraphProvider {
     private extractImports(content: string): string[] {
         const imports = new Set<string>();
         
+        // CSSファイルからの参照は、フラグがtrueの時のみ収集
+        if (content.toLowerCase().endsWith('.css') && !this.includeCss) {
+            return [];
+        }
+        
         const patterns = [
             // ES6 imports
             /import\s+(?:(?:\{[^}]*\}|\*\s+as\s+[^,\s]+|\w+)\s+from\s+)?['"]([^'"]+)['"]/g,
@@ -114,7 +124,9 @@ export class DependencyGraphProvider {
             let match;
             while ((match = pattern.exec(content)) !== null) {
                 const importPath = match[1];
-                if (importPath.startsWith('.')) {
+                // CSSファイルへの参照も、フラグがtrueの時のみ収集
+                if (importPath.startsWith('.') && 
+                    (this.includeCss || !importPath.toLowerCase().endsWith('.css'))) {
                     imports.add(importPath);
                 }
             }
@@ -125,5 +137,10 @@ export class DependencyGraphProvider {
 
     public getDependencies(): Map<string, string[]> {
         return this.dependencies;
+    }
+
+    // フラグを設定するメソッドを追加
+    public setIncludeCss(include: boolean) {
+        this.includeCss = include;
     }
 } 

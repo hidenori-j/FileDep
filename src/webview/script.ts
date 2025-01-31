@@ -1,3 +1,7 @@
+// グローバル変数の前に追加
+declare function acquireVsCodeApi(): any;
+const vscode = acquireVsCodeApi();
+
 // グローバル変数
 let simulation: d3.Simulation<GraphNode, GraphLink> | null = null;
 let isForceEnabled = false;
@@ -5,6 +9,7 @@ let width: number;
 let height: number;
 let graphData: GraphData;
 let toggleForceButton: HTMLButtonElement;
+let svg: d3.Selection<SVGGElement, unknown, HTMLElement, any>;
 
 interface GraphNode {
     id: string | number;
@@ -27,10 +32,6 @@ interface GraphData {
     nodes: GraphNode[];
     links: GraphLink[];
 }
-
-declare const vscode: {
-    postMessage: (message: any) => void;
-};
 
 // メインの初期化関数
 window.addEventListener('load', () => {
@@ -58,6 +59,30 @@ window.addEventListener('load', () => {
         // イベントリスナーの設定
         window.addEventListener('resize', handleResize);
         toggleForceButton.addEventListener('click', handleToggleForce);
+        
+        // CSSトグルの設定
+        const toggleCssCheckbox = document.getElementById('toggleCss') as HTMLInputElement;
+        if (!toggleCssCheckbox) {
+            throw new Error('Toggle CSS checkbox not found');
+        }
+        
+        toggleCssCheckbox.addEventListener('change', () => {
+            // VSCodeにメッセージを送信
+            vscode.postMessage({
+                command: 'toggleCss',
+                checked: toggleCssCheckbox.checked
+            });
+
+            // 既存のグラフをクリア
+            if (simulation) {
+                simulation.stop();
+                simulation = null;
+            }
+            const graphDiv = document.getElementById('graph');
+            if (graphDiv) {
+                graphDiv.innerHTML = '';
+            }
+        });
     } catch (error) {
         console.error('Failed to initialize graph:', error);
     }
@@ -71,7 +96,7 @@ function initializeGraph(data: GraphData): void {
     const tooltip = d3.select('.tooltip');
     
     graphDiv.innerHTML = '';
-    const svg = d3.select('#graph')
+    svg = d3.select('#graph')
         .append('svg')
         .attr('width', width)
         .attr('height', height)
@@ -88,10 +113,19 @@ function initializeGraph(data: GraphData): void {
         );
 
     simulation = d3.forceSimulation<GraphNode>(data.nodes)
-        .force('link', d3.forceLink<GraphNode, GraphLink>(data.links)
-            .id(d => d.id)
-            .distance(150)
-            .strength(1))
+        .force('link', d3.forceLink<GraphNode, GraphLink>(
+            // CSSファイルに関連するリンクを除外
+            data.links.filter(d => {
+                const source = data.nodes.find(n => n.id === d.source);
+                const target = data.nodes.find(n => n.id === d.target);
+                const isCssRelated = source && target && (isCssFile(source) || isCssFile(target));
+                const toggleCssCheckbox = document.getElementById('toggleCss') as HTMLInputElement;
+                return !isCssRelated || toggleCssCheckbox?.checked;
+            })
+        )
+        .id(d => d.id)
+        .distance(150)
+        .strength(1))
         .force('charge', d3.forceManyBody()
             .strength(-1000)
             .distanceMax(500))
@@ -100,7 +134,13 @@ function initializeGraph(data: GraphData): void {
 
     const link = svg.append('g')
         .selectAll('line')
-        .data(data.links)
+        .data(data.links.filter(d => {
+            const source = data.nodes.find(n => n.id === d.source);
+            const target = data.nodes.find(n => n.id === d.target);
+            const isCssRelated = source && target && (isCssFile(source) || isCssFile(target));
+            const toggleCssCheckbox = document.getElementById('toggleCss') as HTMLInputElement;
+            return !isCssRelated || toggleCssCheckbox?.checked;
+        }))
         .enter()
         .append('line')
         .attr('class', 'link');
@@ -245,18 +285,27 @@ window.addEventListener('message', event => {
     const message = event.data;
     switch (message.command) {
         case 'updateDependencyGraph':
-            const graphData = {
-                nodes: message.data.nodes.map((node: any) => ({
-                    id: node.id,
-                    name: node.label,
-                    connections: 1
-                })),
-                links: message.data.edges.map((edge: any) => ({
-                    source: edge.from,
-                    target: edge.to
-                }))
-            };
-            initializeGraph(graphData);
+            if (message.data && message.data.nodes && message.data.links) {
+                graphData = {
+                    nodes: message.data.nodes.map((node: any) => ({
+                        id: node.id,
+                        name: node.name,
+                        fullPath: node.fullPath,
+                        dirPath: node.dirPath,
+                        connections: node.connections || 1
+                    })),
+                    links: message.data.links.map((link: any) => ({
+                        source: link.source,
+                        target: link.target
+                    }))
+                };
+                // グラフを完全に再描画
+                const graphDiv = document.getElementById('graph');
+                if (graphDiv) {
+                    graphDiv.innerHTML = '';
+                    initializeGraph(graphData);
+                }
+            }
             break;
     }
 });
