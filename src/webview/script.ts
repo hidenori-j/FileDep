@@ -88,6 +88,19 @@ window.addEventListener('load', () => {
     }
 });
 
+// 色生成のためのヘルパー関数を追加
+function getDirectoryColor(dirPath: string): string {
+    // ディレクトリパスをハッシュ値に変換
+    let hash = 0;
+    for (let i = 0; i < dirPath.length; i++) {
+        hash = dirPath.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    
+    // HSLカラーを生成（彩度と明度を固定して、色相のみを変化させる）
+    const hue = Math.abs(hash % 360);
+    return `hsl(${hue}, 70%, 50%)`;
+}
+
 function initializeGraph(data: GraphData): void {
     console.log('InitializeGraph called with data:', data); // デバッグ用
     const graphDiv = document.getElementById('graph');
@@ -182,14 +195,28 @@ function initializeGraph(data: GraphData): void {
     node.each(function(this: SVGGElement, d: GraphNode) {
         const element = d3.select<SVGGElement, GraphNode>(this);
         if (isCssFile(d)) {
+            // CSSファイルは三角形
             const size = (8 + Math.sqrt(d.connections) * 6) * 0.75;
             element.append('path')
                 .attr('d', `M0,${size} L${size},${-size} L${-size},${-size} Z`)
-                .attr('class', 'node-shape');
+                .attr('class', 'node-shape')
+                .style('fill', () => getDirectoryColor(d.dirPath));
+        } else if (isJsFile(d)) {
+            // JSとTSファイルは四角形（サイズを三角形に合わせる）
+            const size = (8 + Math.sqrt(d.connections) * 6) * 0.75;  // 三角形と同じサイズ計算
+            element.append('rect')
+                .attr('x', -size)
+                .attr('y', -size)
+                .attr('width', size * 2)
+                .attr('height', size * 2)
+                .attr('class', 'node-shape')
+                .style('fill', () => getDirectoryColor(d.dirPath));
         } else {
+            // JSX、TSXとその他のファイルは円形
             element.append('circle')
                 .attr('r', d => 5 + Math.sqrt(d.connections) * 4)
-                .attr('class', 'node-shape');
+                .attr('class', 'node-shape')
+                .style('fill', () => getDirectoryColor(d.dirPath));
         }
     });
 
@@ -229,6 +256,25 @@ function initializeGraph(data: GraphData): void {
         tooltip.transition()
             .duration(500)
             .style('opacity', 0);
+    });
+
+    // リンクの色も親子関係に基づいて設定
+    link.style('stroke', d => {
+        const source = data.nodes.find(n => n.id === d.source);
+        const target = data.nodes.find(n => n.id === d.target);
+        if (!source || !target) return 'var(--vscode-editor-foreground)';
+
+        // 同じディレクトリ内のリンクは、そのディレクトリの色を使用
+        if (source.dirPath === target.dirPath) {
+            return getDirectoryColor(source.dirPath);
+        }
+        return 'var(--vscode-editor-foreground)';
+    })
+    .style('stroke-opacity', d => {
+        const source = data.nodes.find(n => n.id === d.source);
+        const target = data.nodes.find(n => n.id === d.target);
+        // 同じディレクトリ内のリンクは不透明度を上げる
+        return source?.dirPath === target?.dirPath ? 0.6 : 0.2;
     });
 }
 
@@ -365,11 +411,24 @@ function dragended(event: d3.D3DragEvent<SVGGElement, GraphNode, GraphNode>, d: 
     d.fy = null;
 }
 
-// ファイルタイプを判定するヘルパー関数を追加
+// ファイルタイプを判定するヘルパー関数を更新
 function isCssFile(node: GraphNode): boolean {
     return node.fullPath.toLowerCase().endsWith('.css');
 }
 
+function isJsFile(node: GraphNode): boolean {
+    // .jsxと.tsxは除外し、.jsと.tsのみを対象に
+    return /\.(js|ts)$/.test(node.fullPath.toLowerCase());
+}
+
+function isJsxFile(node: GraphNode): boolean {
+    // .jsxと.tsxファイルを判定
+    return /\.(jsx|tsx)$/.test(node.fullPath.toLowerCase());
+}
+
 function getNodeClass(node: GraphNode): string {
-    return isCssFile(node) ? 'css-file' : 'default-file';
+    if (isCssFile(node)) return 'css-file';
+    if (isJsFile(node)) return 'js-file';
+    if (isJsxFile(node)) return 'jsx-file';
+    return 'default-file';
 } 

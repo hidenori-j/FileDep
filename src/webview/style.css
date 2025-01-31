@@ -22,7 +22,7 @@ body {
 .link {
     stroke: var(--vscode-editor-foreground);
     stroke-opacity: 0.3;
-    stroke-width: 1px;
+    stroke-width: 1.5px;
 }
 svg {
     background-color: transparent;
@@ -99,4 +99,21 @@ svg {
 .link.css-related.hidden {
     visibility: hidden;
     opacity: 0;
+}
+.node .node-shape {
+    stroke: #fff;
+    stroke-width: 2px;
+    transition: all 0.3s ease;
+}
+.node:hover .node-shape {
+    stroke-width: 3px;
+    filter: brightness(1.1);
+}
+.node.js-file .node-shape {
+    stroke: #fff;
+    stroke-width: 2px;
+}
+.node.jsx-file .node-shape {
+    stroke: #fff;
+    stroke-width: 2px;
 } 
