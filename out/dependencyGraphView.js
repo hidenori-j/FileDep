@@ -67,6 +67,17 @@ class DependencyGraphView {
         const nodeMap = new Map();
         // ワークスペースのルートパスを取得
         const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+        // 接続数をカウント
+        const connectionCounts = new Map();
+        dependencies.forEach((imports, filePath) => {
+            // 出力の接続数
+            connectionCounts.set(filePath, (connectionCounts.get(filePath) || 0) + imports.length);
+            // 入力の接続数
+            imports.forEach(importPath => {
+                const fullImportPath = path.resolve(path.dirname(filePath), importPath);
+                connectionCounts.set(fullImportPath, (connectionCounts.get(fullImportPath) || 0) + 1);
+            });
+        });
         let index = 0;
         dependencies.forEach((_, filePath) => {
             // 相対パスを計算
@@ -80,7 +91,8 @@ class DependencyGraphView {
                     id: index,
                     name: shortPath,
                     fullPath: filePath,
-                    dirPath: dirPath === '.' ? '' : dirPath // ルートの場合は空文字列に
+                    dirPath: dirPath === '.' ? '' : dirPath,
+                    connections: connectionCounts.get(filePath) || 0 // 接続数を追加
                 });
                 index++;
             }
@@ -274,13 +286,21 @@ class DependencyGraphView {
 
                         node.each(function(d) {
                             const el = d3.select(this);
+                            // 接続数に基づいてサイズを計算（最小5、最大15）
+                            const size = 5 + Math.min(10, d.connections * 2);
+                            
                             if (d.name.endsWith('.css')) {
+                                // CSSファイルは三角形
                                 el.append('path')
-                                    .attr('d', d3.symbol().type(d3.symbolTriangle).size(150))
-                                    .attr('transform', 'translate(0,0)');
+                                    .attr('d', d3.symbol()
+                                        .type(d3.symbolTriangle)
+                                        // 三角形のサイズを円の直径に合わせて調整
+                                        .size(Math.PI * size * size))
+                                    .attr('transform', 'translate(0,' + size/2 + ')');
                             } else {
+                                // その他のファイルは円形
                                 el.append('circle')
-                                    .attr('r', 8);
+                                    .attr('r', size);
                             }
                         });
 
