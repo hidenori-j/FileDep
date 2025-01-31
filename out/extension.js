@@ -30,7 +30,7 @@ const dependencyGraphView_1 = require("./dependencyGraphView");
 function activate(context) {
     const provider = new dependencyGraphProvider_1.DependencyGraphProvider();
     const view = new dependencyGraphView_1.DependencyGraphView(context.extensionUri, provider);
-    context.subscriptions.push(vscode.commands.registerCommand('dependency-visualizer.showGraph', async () => {
+    context.subscriptions.push(vscode.commands.registerCommand('filedep.showGraph', async () => {
         await view.show();
     }));
 }

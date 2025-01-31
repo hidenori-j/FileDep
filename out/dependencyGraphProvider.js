@@ -67,8 +67,8 @@ class DependencyGraphProvider {
         }
     }
     isTargetFile(fileName) {
-        // 解析対象のファイル拡張子を拡大
-        return /\.(js|jsx|ts|tsx|vue|svelte)$/.test(fileName);
+        // CSSファイルを追加
+        return /\.(js|jsx|ts|tsx|vue|svelte|css)$/.test(fileName);
     }
     async analyzeDependencies(filePath) {
         try {

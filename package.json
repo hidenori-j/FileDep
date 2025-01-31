@@ -1,6 +1,6 @@
 {
-    "name": "dependency-visualizer",
-    "displayName": "Dependency Visualizer",
+    "name": "filedep",
+    "displayName": "FileDep",
     "description": "ファイルの依存関係を視覚化する拡張機能",
     "version": "0.0.1",
     "engines": {
@@ -10,14 +10,14 @@
         "Visualization"
     ],
     "activationEvents": [
-        "onCommand:dependency-visualizer.showGraph"
+        "onCommand:filedep.showGraph"
     ],
     "main": "./out/extension.js",
     "contributes": {
         "commands": [
             {
-                "command": "dependency-visualizer.showGraph",
-                "title": "依存関係グラフを表示"
+                "command": "filedep.showGraph",
+                "title": "FileDep: 依存関係を表示"
             }
         ]
     },

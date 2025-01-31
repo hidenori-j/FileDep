@@ -7,7 +7,7 @@ export function activate(context: vscode.ExtensionContext) {
     const view = new DependencyGraphView(context.extensionUri, provider);
 
     context.subscriptions.push(
-        vscode.commands.registerCommand('dependency-visualizer.showGraph', async () => {
+        vscode.commands.registerCommand('filedep.showGraph', async () => {
             await view.show();
         })
     );

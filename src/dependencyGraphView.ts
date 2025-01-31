@@ -20,7 +20,7 @@ export class DependencyGraphView {
 
         this.panel = vscode.window.createWebviewPanel(
             'dependencyGraph',
-            '依存関係グラフ',
+            'FileDep',
             {
                 viewColumn: vscode.ViewColumn.One,
                 preserveFocus: true
@@ -181,6 +181,11 @@ export class DependencyGraphView {
                     .icon {
                         font-size: 20px;
                     }
+                    .node.css-file path {
+                        fill: #4CAF50;
+                        stroke: #fff;
+                        stroke-width: 2px;
+                    }
                 </style>
             </head>
             <body>
@@ -246,7 +251,7 @@ export class DependencyGraphView {
                             .data(graphData.nodes)
                             .enter()
                             .append('g')
-                            .attr('class', 'node')
+                            .attr('class', d => 'node' + (d.name.endsWith('.css') ? ' css-file' : ''))
                             .call(d3.drag()
                                 .on('start', dragstarted)
                                 .on('drag', dragged)
@@ -267,8 +272,17 @@ export class DependencyGraphView {
                                     .style('top', (event.pageY - 10) + 'px');
                             });
 
-                        node.append('circle')
-                            .attr('r', 8);
+                        node.each(function(d) {
+                            const el = d3.select(this);
+                            if (d.name.endsWith('.css')) {
+                                el.append('path')
+                                    .attr('d', d3.symbol().type(d3.symbolTriangle).size(150))
+                                    .attr('transform', 'translate(0,0)');
+                            } else {
+                                el.append('circle')
+                                    .attr('r', 8);
+                            }
+                        });
 
                         node.append('text')
                             .attr('dx', 12)
