@@ -65,12 +65,23 @@ class DependencyGraphView {
         const nodes = [];
         const links = [];
         const nodeMap = new Map();
+        // ワークスペースのルートパスを取得
+        const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
         let index = 0;
         dependencies.forEach((_, filePath) => {
+            // 相対パスを計算
+            const relativePath = path.relative(workspaceRoot, filePath);
             const shortPath = path.basename(filePath);
+            // ディレクトリパスのみを取得
+            const dirPath = path.dirname(relativePath);
             if (!nodeMap.has(filePath)) {
                 nodeMap.set(filePath, index);
-                nodes.push({ id: index, name: shortPath, fullPath: filePath });
+                nodes.push({
+                    id: index,
+                    name: shortPath,
+                    fullPath: filePath,
+                    dirPath: dirPath === '.' ? '' : dirPath // ルートの場合は空文字列に
+                });
                 index++;
             }
         });
@@ -137,10 +148,22 @@ class DependencyGraphView {
                     svg {
                         background-color: transparent;
                     }
+                    .tooltip {
+                        position: absolute;
+                        padding: 8px;
+                        background: var(--vscode-editor-background);
+                        border: 1px solid var(--vscode-editor-foreground);
+                        border-radius: 4px;
+                        pointer-events: none;
+                        font-size: 12px;
+                        opacity: 0;
+                        transition: opacity 0.2s;
+                    }
                 </style>
             </head>
             <body>
                 <div id="graph"></div>
+                <div class="tooltip"></div>
                 <script>
                     const graphData = ${graphDataStr};
                     let simulation;
@@ -149,6 +172,7 @@ class DependencyGraphView {
                         const width = window.innerWidth;
                         const height = window.innerHeight;
                         const graphDiv = document.getElementById('graph');
+                        const tooltip = d3.select('.tooltip');
                         
                         graphDiv.innerHTML = '';
                         const svg = d3.select('#graph')
@@ -194,7 +218,22 @@ class DependencyGraphView {
                             .call(d3.drag()
                                 .on('start', dragstarted)
                                 .on('drag', dragged)
-                                .on('end', dragended));
+                                .on('end', dragended))
+                            .on('mouseover', (event, d) => {
+                                tooltip
+                                    .style('opacity', 1)
+                                    .html(d.dirPath)
+                                    .style('left', (event.pageX + 10) + 'px')
+                                    .style('top', (event.pageY - 10) + 'px');
+                            })
+                            .on('mouseout', () => {
+                                tooltip.style('opacity', 0);
+                            })
+                            .on('mousemove', (event) => {
+                                tooltip
+                                    .style('left', (event.pageX + 10) + 'px')
+                                    .style('top', (event.pageY - 10) + 'px');
+                            });
 
                         node.append('circle')
                             .attr('r', 8);
