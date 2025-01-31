@@ -110,14 +110,25 @@ function initializeGraph(data: GraphData): void {
         .data(data.nodes)
         .enter()
         .append('g')
-        .attr('class', d => 'node')
+        .attr('class', d => `node ${getNodeClass(d)}`)
         .call(d3.drag<SVGGElement, GraphNode>()
             .on('start', dragstarted)
             .on('drag', dragged)
             .on('end', dragended));
 
-    node.append('circle')
-        .attr('r', d => 5 + Math.min(10, d.connections * 2));
+    node.each(function(this: SVGGElement, d: GraphNode) {
+        const element = d3.select<SVGGElement, GraphNode>(this);
+        if (isCssFile(d)) {
+            const size = 10 + Math.min(10, d.connections * 2);
+            element.append('path')
+                .attr('d', `M0,${size} L${size},${-size} L${-size},${-size} Z`)
+                .attr('class', 'node-shape');
+        } else {
+            element.append('circle')
+                .attr('r', d => 5 + Math.min(10, d.connections * 2))
+                .attr('class', 'node-shape');
+        }
+    });
 
     node.append('text')
         .attr('dx', 12)
@@ -265,4 +276,13 @@ function dragended(event: d3.D3DragEvent<SVGGElement, GraphNode, GraphNode>, d: 
     if (!event.active && simulation) simulation.alphaTarget(0);
     d.fx = null;
     d.fy = null;
+}
+
+// ファイルタイプを判定するヘルパー関数を追加
+function isCssFile(node: GraphNode): boolean {
+    return node.fullPath.toLowerCase().endsWith('.css');
+}
+
+function getNodeClass(node: GraphNode): string {
+    return isCssFile(node) ? 'css-file' : 'default-file';
 } 

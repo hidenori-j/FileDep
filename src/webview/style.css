@@ -64,4 +64,14 @@ svg {
     fill: #4CAF50;
     stroke: #fff;
     stroke-width: 2px;
+}
+.node.css-file .node-shape {
+    fill: #FF69B4;
+    stroke: #fff;
+    stroke-width: 2px;
+}
+.node.default-file .node-shape {
+    fill: #4CAF50;
+    stroke: #fff;
+    stroke-width: 2px;
 } 
