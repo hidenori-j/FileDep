@@ -174,7 +174,9 @@ class DependencyGraphView {
                             .force('link', d3.forceLink(graphData.links).id(d => d.id).distance(100))
                             .force('charge', d3.forceManyBody().strength(-300))
                             .force('center', d3.forceCenter(width / 2, height / 2))
-                            .force('collision', d3.forceCollide().radius(50));
+                            .force('collision', d3.forceCollide().radius(50))
+                            .alphaTarget(0)
+                            .alphaDecay(0.1);
 
                         const link = svg.append('g')
                             .selectAll('line')
@@ -214,7 +216,9 @@ class DependencyGraphView {
                         });
 
                         function dragstarted(event, d) {
-                            if (!event.active) simulation.alphaTarget(0.3).restart();
+                            if (!event.active) {
+                                simulation.alphaTarget(0.3).restart();
+                            }
                             d.fx = d.x;
                             d.fy = d.y;
                         }
@@ -225,10 +229,16 @@ class DependencyGraphView {
                         }
                         
                         function dragended(event, d) {
-                            if (!event.active) simulation.alphaTarget(0);
+                            if (!event.active) {
+                                simulation.alphaTarget(0);
+                            }
                             d.fx = null;
                             d.fy = null;
                         }
+
+                        simulation.on("end", () => {
+                            simulation.stop();
+                        });
                     });
                 </script>
             </body>
