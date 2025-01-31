@@ -1,0 +1,38 @@
+{
+    "name": "dependency-visualizer",
+    "displayName": "Dependency Visualizer",
+    "description": "ファイルの依存関係を視覚化する拡張機能",
+    "version": "0.0.1",
+    "engines": {
+        "vscode": "^1.60.0"
+    },
+    "categories": [
+        "Visualization"
+    ],
+    "activationEvents": [
+        "onCommand:dependency-visualizer.showGraph"
+    ],
+    "main": "./out/extension.js",
+    "contributes": {
+        "commands": [
+            {
+                "command": "dependency-visualizer.showGraph",
+                "title": "依存関係グラフを表示"
+            }
+        ]
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "compile": "tsc -p ./",
+        "watch": "tsc -watch -p ./"
+    },
+    "dependencies": {
+        "d3": "^7.8.5"
+    },
+    "devDependencies": {
+        "@types/d3": "^7.4.3",
+        "@types/vscode": "^1.60.0",
+        "@types/node": "^14.14.37",
+        "typescript": "^4.3.5"
+    }
+} 
