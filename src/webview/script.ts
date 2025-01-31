@@ -118,20 +118,42 @@ function initializeGraph(data: GraphData): void {
             .distance(d => {
                 const source = data.nodes.find(n => n.id === d.source);
                 const target = data.nodes.find(n => n.id === d.target);
-                const baseDistance = 100;
+                if (!source || !target) return 100;
+
+                // 親子関係の判定（ディレクトリパスを比較）
+                const isParentChild = source.dirPath === target.dirPath || 
+                    source.dirPath.startsWith(target.dirPath + '/') || 
+                    target.dirPath.startsWith(source.dirPath + '/');
+
+                // 親子関係がある場合は距離を短く
+                const baseDistance = isParentChild ? 50 : 150;
+
+                // 接続数に基づいて距離を調整
                 const scale = Math.max(
-                    source ? Math.sqrt(source.connections) : 1,
-                    target ? Math.sqrt(target.connections) : 1
+                    Math.sqrt(source.connections),
+                    Math.sqrt(target.connections)
                 );
-                return baseDistance * (1 + scale * 0.4);
+                
+                return baseDistance * (1 + scale * 0.2);
             })
-            .strength(0.5))
+            .strength(d => {
+                const source = data.nodes.find(n => n.id === d.source);
+                const target = data.nodes.find(n => n.id === d.target);
+                if (!source || !target) return 0.5;
+
+                // 親子関係の場合は引力を強く
+                const isParentChild = source.dirPath === target.dirPath || 
+                    source.dirPath.startsWith(target.dirPath + '/') || 
+                    target.dirPath.startsWith(source.dirPath + '/');
+
+                return isParentChild ? 1.0 : 0.3;
+            }))
         .force('charge', d3.forceManyBody<GraphNode>()
-            .strength(d => -500 - (d.connections || 0) * 200)
+            .strength(d => -300 - (d.connections || 0) * 100)
             .distanceMax(300))
         .force('center', d3.forceCenter(width / 2, height / 2))
         .force('collision', d3.forceCollide<GraphNode>()
-            .radius(d => 20 + Math.sqrt(d.connections || 0) * 10));
+            .radius(d => 20 + Math.sqrt(d.connections || 0) * 5));
 
     const link = svg.append('g')
         .selectAll('line')
