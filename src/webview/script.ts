@@ -348,11 +348,11 @@ window.addEventListener('message', event => {
             if (message.data && message.data.nodes && message.data.links) {
                 // ノードのマップを作成
                 const nodeMap = new Map(
-                    message.data.nodes.map(node => [node.id, true])
+                    message.data.nodes.map((node: GraphNode) => [node.id, true])
                 );
 
                 // 有効なリンクのみをフィルタリング
-                const validLinks = message.data.links.filter(link => 
+                const validLinks = message.data.links.filter((link: { source: string; target: string }) => 
                     nodeMap.has(link.source) && nodeMap.has(link.target)
                 );
 
