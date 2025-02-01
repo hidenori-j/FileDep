@@ -6,6 +6,8 @@ export function activate(context: vscode.ExtensionContext) {
     const provider = new DependencyGraphProvider();
     const view = new DependencyGraphView(context.extensionUri, provider);
 
+    provider.setTargetExtensions(['.js', '.ts', '.jsx', '.tsx', '.css', '.html']);
+
     context.subscriptions.push(
         vscode.commands.registerCommand('filedep.showGraph', async () => {
             await view.show();
