@@ -25,7 +25,68 @@
                 "command": "filedep.showGraph",
                 "title": "FileDep: 依存関係を表示"
             }
-        ]
+        ],
+        "configuration": {
+            "title": "FileDep",
+            "properties": {
+                "filedep.ignoredExtensions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "default": [
+                        ".exe", ".dll", ".so", ".dylib",
+                        ".png", ".jpg", ".jpeg", ".gif", ".ico", ".svg", ".webp", ".bmp", ".tiff",
+                        ".ttf", ".woff", ".woff2", ".eot", ".otf",
+                        ".zip", ".tar", ".gz", ".rar", ".7z", ".bz2", ".xz",
+                        ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+                        ".odt", ".ods", ".odp", ".pages", ".numbers",
+                        ".log", ".dat", ".bak", ".tmp", ".temp", ".cache", ".swp",
+                        ".mp3", ".mp4", ".wav", ".avi", ".mov", ".mkv", ".flv", ".wmv",
+                        ".aac", ".m4a", ".ogg", ".webm",
+                        ".map", ".min.js", ".min.css", ".bundle.js", ".bundle.css",
+                        ".chunk.js", ".chunk.css",
+                        ".vsix", ".code-workspace",
+                        ".db", ".sqlite", ".sqlite3",
+                        ".sass-cache", ".npm", ".yarn",
+                        ".sh", ".bash", ".zsh", ".fish", ".cmd", ".bat", ".ps1",
+                        ".gitignore", ".gitattributes", ".gitmodules",
+                        ".eslintrc", ".prettierrc", ".stylelintrc",
+                        ".babelrc", ".npmrc", ".yarnrc", ".nvmrc",
+                        ".dockerignore", ".editorconfig",
+                        ".lock", "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
+                        ".DS_Store", "Thumbs.db", ".env", ".env.local", ".env.development",
+                        ".env.test", ".env.production"
+                    ],
+                    "description": "解析から除外するファイル拡張子のリスト（例: [\".exe\", \".dll\"]）"
+                },
+                "filedep.ignoredDirectories": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "default": [
+                        "node_modules", "bower_components", "vendor", "packages",
+                        ".git", ".svn", ".hg", ".bzr",
+                        "out", "dist", "build", "target", "bin", "obj",
+                        ".cache", ".temp", "tmp",
+                        "coverage", ".nyc_output", "__tests__", "__mocks__",
+                        "docs", "doc", "documentation",
+                        ".idea", ".vscode", ".vs", ".settings",
+                        ".github", ".gitlab", ".husky",
+                        "logs", "log",
+                        "public", "static",
+                        "assets/images", "assets/fonts", "assets/media"
+                    ],
+                    "description": "解析から除外するディレクトリのリスト（例: [\"node_modules\", \"dist\"]）"
+                },
+                "filedep.checkBinaryFiles": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "バイナリファイルの自動検出を有効にする"
+                }
+            }
+        }
     },
     "scripts": {
         "vscode:prepublish": "npm run compile",

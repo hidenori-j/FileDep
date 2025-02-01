@@ -39,27 +39,31 @@ export class DependencyGraphProvider {
         try {
             const files = await fs.promises.readdir(dirPath);
             
+            // 設定から除外リストを取得
+            const config = vscode.workspace.getConfiguration('filedep');
+            const ignoredExtensions = new Set(config.get<string[]>('ignoredExtensions') || []);
+            const ignoredDirs = config.get<string[]>('ignoredDirectories') || [];
+
             for (const file of files) {
                 const fullPath = path.join(dirPath, file);
                 const stat = await fs.promises.stat(fullPath);
 
                 if (stat.isDirectory()) {
-                    if (file !== 'node_modules' && file !== '.git' && file !== 'out' && !file.startsWith('.')) {
+                    if (!ignoredDirs.includes(file) && !file.startsWith('.')) {
                         await this.detectExtensions(fullPath);
                     }
                 } else {
-                    const ext = '.' + file.split('.').pop()?.toLowerCase();
-                    if (ext && ext !== '.') {
-                        // バイナリファイルや特定の拡張子を除外
-                        const ignoredExtensions = new Set([
-                            '.exe', '.dll', '.so', '.dylib', '.log',
-                            '.png', '.jpg', '.jpeg', '.gif', '.ico',
-                            '.ttf', '.woff', '.woff2', '.eot',
-                            '.zip', '.tar', '.gz', '.rar',
-                            '.pdf', '.doc', '.docx', '.xls', '.xlsx'
-                        ]);
-                        if (!ignoredExtensions.has(ext)) {
-                            this.detectedExtensions.add(ext);
+                    const ext = path.extname(file).toLowerCase();
+                    if (ext && ext !== '.' && !ignoredExtensions.has(ext)) {
+                        // バイナリファイルのチェック（オプション）
+                        try {
+                            const buffer = await fs.promises.readFile(fullPath, { encoding: null, flag: 'r' });
+                            const isBinary = buffer.slice(0, 4096).includes(0);
+                            if (!isBinary) {
+                                this.detectedExtensions.add(ext);
+                            }
+                        } catch (error) {
+                            console.warn(`Failed to check if file is binary: ${fullPath}`, error);
                         }
                     }
                 }
