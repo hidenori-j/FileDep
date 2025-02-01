@@ -2,12 +2,11 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 
-const DEFAULT_TARGET_EXTENSIONS = ['.js', '.jsx', '.ts', '.tsx', '.vue', '.svelte', '.css'];
-
 export class DependencyGraphProvider {
     private dependencies: Map<string, string[]> = new Map();
-    private targetExtensions: string[] = DEFAULT_TARGET_EXTENSIONS;
+    private targetExtensions: string[] = [];  // 空の配列で初期化
     private disabledExtensions: Set<string> = new Set();
+    private detectedExtensions: Set<string> = new Set();
 
     public async updateDependencies() {
         const workspaceFolders = vscode.workspace.workspaceFolders;
@@ -17,13 +16,57 @@ export class DependencyGraphProvider {
         }
 
         this.dependencies.clear();
+        this.detectedExtensions.clear();
         
+        // まず使用されている拡張子を検出
         for (const folder of workspaceFolders) {
-            console.log('Scanning directory:', folder.uri.fsPath);
+            await this.detectExtensions(folder.uri.fsPath);
+        }
+        
+        // 検出された拡張子を対象拡張子として設定
+        this.targetExtensions = Array.from(this.detectedExtensions).sort();
+        console.log('Detected extensions:', this.targetExtensions);
+
+        // 依存関係の解析
+        for (const folder of workspaceFolders) {
             await this.scanDirectory(folder.uri.fsPath);
         }
 
         console.log('Final dependencies:', this.dependencies);
+    }
+
+    private async detectExtensions(dirPath: string) {
+        try {
+            const files = await fs.promises.readdir(dirPath);
+            
+            for (const file of files) {
+                const fullPath = path.join(dirPath, file);
+                const stat = await fs.promises.stat(fullPath);
+
+                if (stat.isDirectory()) {
+                    if (file !== 'node_modules' && file !== '.git' && file !== 'out' && !file.startsWith('.')) {
+                        await this.detectExtensions(fullPath);
+                    }
+                } else {
+                    const ext = '.' + file.split('.').pop()?.toLowerCase();
+                    if (ext && ext !== '.') {
+                        // バイナリファイルや特定の拡張子を除外
+                        const ignoredExtensions = new Set([
+                            '.exe', '.dll', '.so', '.dylib', '.log',
+                            '.png', '.jpg', '.jpeg', '.gif', '.ico',
+                            '.ttf', '.woff', '.woff2', '.eot',
+                            '.zip', '.tar', '.gz', '.rar',
+                            '.pdf', '.doc', '.docx', '.xls', '.xlsx'
+                        ]);
+                        if (!ignoredExtensions.has(ext)) {
+                            this.detectedExtensions.add(ext);
+                        }
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Error detecting extensions:', error);
+        }
     }
 
     private async scanDirectory(dirPath: string) {
@@ -114,7 +157,9 @@ export class DependencyGraphProvider {
 
     private extractImports(content: string): string[] {
         const imports = new Set<string>();
+        const fileExt = path.extname(content).toLowerCase();
         
+        // ファイルタイプに応じたパターンを選択
         const patterns = [
             // ES6 imports
             /import\s+(?:(?:\{[^}]*\}|\*\s+as\s+[^,\s]+|\w+)\s+from\s+)?['"]([^'"]+)['"]/g,
@@ -127,20 +172,50 @@ export class DependencyGraphProvider {
             // CSS imports (@import)
             /@import\s+['"]([^'"]+)['"]/g,
             // CSS url imports
-            /url\s*\(\s*['"]?([^'")\s]+)['"]?\s*\)/g
+            /url\s*\(\s*['"]?([^'")\s]+)['"]?\s*\)/g,
+            // HTML src/href attributes
+            /(?:src|href)\s*=\s*['"]([^'"]+)['"]/g,
+            // JSON imports (for import assertions)
+            /import\s+(?:(?:\{[^}]*\}|\*\s+as\s+[^,\s]+|\w+)\s+from\s+)?['"]([^'"]+)['"]\s*assert\s*\{\s*type\s*:\s*['"]json['"]\s*\}/g,
+            // JSON references in JavaScript/TypeScript
+            /".*\.json"/g,
+            // webpack/require style JSON imports
+            /require\s*\(\s*['"].*\.json['"]\s*\)/g
         ];
+
+        // JSONファイル内の参照を解析
+        if (fileExt === '.json') {
+            try {
+                const jsonContent = JSON.parse(content);
+                this.extractJsonReferences(jsonContent, imports);
+            } catch (error) {
+                console.error('Error parsing JSON:', error);
+            }
+        }
 
         patterns.forEach(pattern => {
             let match;
             while ((match = pattern.exec(content)) !== null) {
                 const importPath = match[1];
-                if (importPath.startsWith('.')) {
+                if (importPath && importPath.startsWith('.')) {
                     imports.add(importPath);
                 }
             }
         });
 
         return Array.from(imports);
+    }
+
+    // JSONオブジェクト内の参照を再帰的に探索
+    private extractJsonReferences(obj: any, imports: Set<string>): void {
+        if (typeof obj === 'string' && obj.startsWith('.') && 
+            (obj.endsWith('.json') || obj.endsWith('.js') || obj.endsWith('.ts'))) {
+            imports.add(obj);
+        } else if (Array.isArray(obj)) {
+            obj.forEach(item => this.extractJsonReferences(item, imports));
+        } else if (obj && typeof obj === 'object') {
+            Object.values(obj).forEach(value => this.extractJsonReferences(value, imports));
+        }
     }
 
     public getDependencies(): Map<string, string[]> {
