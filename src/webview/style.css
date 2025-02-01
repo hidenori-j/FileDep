@@ -116,4 +116,32 @@ svg {
 .node.jsx-file .node-shape {
     stroke: #fff;
     stroke-width: 2px;
+}
+.filter-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+}
+.control-checkbox {
+    background: var(--vscode-button-background);
+    padding: 5px 10px;
+    border-radius: 4px;
+    color: var(--vscode-button-foreground);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    cursor: pointer;
+    user-select: none;
+}
+.control-checkbox:hover {
+    background: var(--vscode-button-hoverBackground);
+}
+.node.hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+.link.hidden {
+    opacity: 0;
+    pointer-events: none;
 } 

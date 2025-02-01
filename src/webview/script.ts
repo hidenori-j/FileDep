@@ -33,6 +33,18 @@ interface GraphData {
     links: GraphLink[];
 }
 
+interface ExtensionConfig {
+    extension: string;
+    enabled: boolean;
+}
+
+interface GraphConfig {
+    targetExtensions: ExtensionConfig[];
+}
+
+// グローバル変数に追加
+let config: GraphConfig;
+
 // メインの初期化関数
 window.addEventListener('load', () => {
     try {
@@ -41,10 +53,15 @@ window.addEventListener('load', () => {
             throw new Error('Graph data element not found');
         }
         
-        graphData = JSON.parse(graphDataElement.textContent || '{}') as GraphData;
+        const parsedData = JSON.parse(graphDataElement.textContent || '{}');
+        graphData = parsedData as GraphData;
+        config = parsedData.config as GraphConfig;
+        
         if (!graphData || !graphData.nodes || !graphData.links) {
             throw new Error('Invalid graph data format');
         }
+        
+        console.log('Parsed config:', config);
         
         width = window.innerWidth;
         height = window.innerHeight;
@@ -53,36 +70,16 @@ window.addEventListener('load', () => {
             throw new Error('Toggle force button not found');
         }
         
-        console.log('Initializing graph with data:', graphData); // デバッグ用
+        // フィルターUIを生成（グラフの初期化前に行う）
+        createFilterControls();
+        
+        console.log('Initializing graph with data:', graphData);
         initializeGraph(graphData);
         
         // イベントリスナーの設定
         window.addEventListener('resize', handleResize);
         toggleForceButton.addEventListener('click', handleToggleForce);
         
-        // CSSトグルの設定
-        const toggleCssCheckbox = document.getElementById('toggleCss') as HTMLInputElement;
-        if (!toggleCssCheckbox) {
-            throw new Error('Toggle CSS checkbox not found');
-        }
-        
-        toggleCssCheckbox.addEventListener('change', () => {
-            // VSCodeにメッセージを送信
-            vscode.postMessage({
-                command: 'toggleCss',
-                checked: toggleCssCheckbox.checked
-            });
-
-            // 既存のグラフをクリア
-            if (simulation) {
-                simulation.stop();
-                simulation = null;
-            }
-            const graphDiv = document.getElementById('graph');
-            if (graphDiv) {
-                graphDiv.innerHTML = '';
-            }
-        });
     } catch (error) {
         console.error('Failed to initialize graph:', error);
     }
@@ -102,19 +99,23 @@ function getDirectoryColor(dirPath: string): string {
 }
 
 function initializeGraph(data: GraphData): void {
-    console.log('InitializeGraph called with data:', data); // デバッグ用
+    console.log('InitializeGraph called with data:', data);
     const graphDiv = document.getElementById('graph');
     if (!graphDiv) return;
-    
-    const tooltip = d3.select('.tooltip');
-    
+
+    // グラフコンテナをクリア
     graphDiv.innerHTML = '';
+
+    // 新しいSVGを作成
     svg = d3.select('#graph')
         .append('svg')
         .attr('width', width)
         .attr('height', height)
         .append('g');
 
+    const tooltip = d3.select('.tooltip');
+
+    // ズーム設定
     const zoom = d3.zoom<SVGSVGElement, unknown>();
     d3.select<SVGSVGElement, unknown>('#graph svg')
         .call(zoom
@@ -125,6 +126,7 @@ function initializeGraph(data: GraphData): void {
             })
         );
 
+    // シミュレーションの設定と開始（先に設定）
     simulation = d3.forceSimulation<GraphNode>(data.nodes)
         .force('link', d3.forceLink<GraphNode, GraphLink>(data.links)
             .id(d => d.id)
@@ -138,45 +140,16 @@ function initializeGraph(data: GraphData): void {
                     source.dirPath.startsWith(target.dirPath + '/') || 
                     target.dirPath.startsWith(source.dirPath + '/');
 
-                // 親子関係がある場合は距離を短く
-                const baseDistance = isParentChild ? 50 : 150;
-
-                // 接続数に基づいて距離を調整
-                const scale = Math.max(
-                    Math.sqrt(source.connections),
-                    Math.sqrt(target.connections)
-                );
-                
-                return baseDistance * (1 + scale * 0.2);
-            })
-            .strength(d => {
-                const source = data.nodes.find(n => n.id === d.source);
-                const target = data.nodes.find(n => n.id === d.target);
-                if (!source || !target) return 0.5;
-
-                // 親子関係の場合は引力を強く
-                const isParentChild = source.dirPath === target.dirPath || 
-                    source.dirPath.startsWith(target.dirPath + '/') || 
-                    target.dirPath.startsWith(source.dirPath + '/');
-
-                return isParentChild ? 1.0 : 0.3;
+                return isParentChild ? 50 : 150;
             }))
-        .force('charge', d3.forceManyBody<GraphNode>()
-            .strength(d => -300 - (d.connections || 0) * 100)
-            .distanceMax(300))
+        .force('charge', d3.forceManyBody().strength(-300))
         .force('center', d3.forceCenter(width / 2, height / 2))
-        .force('collision', d3.forceCollide<GraphNode>()
-            .radius(d => 20 + Math.sqrt(d.connections || 0) * 5));
+        .force('collision', d3.forceCollide().radius(30));
 
+    // リンクとノードの作成
     const link = svg.append('g')
         .selectAll('line')
-        .data(data.links.filter(d => {
-            const source = data.nodes.find(n => n.id === d.source);
-            const target = data.nodes.find(n => n.id === d.target);
-            const isCssRelated = source && target && (isCssFile(source) || isCssFile(target));
-            const toggleCssCheckbox = document.getElementById('toggleCss') as HTMLInputElement;
-            return !isCssRelated || toggleCssCheckbox?.checked;
-        }))
+        .data(data.links)
         .enter()
         .append('line')
         .attr('class', 'link');
@@ -192,18 +165,17 @@ function initializeGraph(data: GraphData): void {
             .on('drag', dragged)
             .on('end', dragended));
 
+    // ノードの形状を設定
     node.each(function(this: SVGGElement, d: GraphNode) {
         const element = d3.select<SVGGElement, GraphNode>(this);
         if (isCssFile(d)) {
-            // CSSファイルは三角形
             const size = (8 + Math.sqrt(d.connections) * 6) * 0.75;
             element.append('path')
                 .attr('d', `M0,${size} L${size},${-size} L${-size},${-size} Z`)
                 .attr('class', 'node-shape')
                 .style('fill', () => getDirectoryColor(d.dirPath));
         } else if (isJsFile(d)) {
-            // JSとTSファイルは四角形（サイズを三角形に合わせる）
-            const size = (8 + Math.sqrt(d.connections) * 6) * 0.75;  // 三角形と同じサイズ計算
+            const size = (8 + Math.sqrt(d.connections) * 6) * 0.75;
             element.append('rect')
                 .attr('x', -size)
                 .attr('y', -size)
@@ -212,7 +184,6 @@ function initializeGraph(data: GraphData): void {
                 .attr('class', 'node-shape')
                 .style('fill', () => getDirectoryColor(d.dirPath));
         } else {
-            // JSX、TSXとその他のファイルは円形
             element.append('circle')
                 .attr('r', d => 5 + Math.sqrt(d.connections) * 4)
                 .attr('class', 'node-shape')
@@ -220,11 +191,13 @@ function initializeGraph(data: GraphData): void {
         }
     });
 
+    // ノードのラベルを追加
     node.append('text')
         .attr('dx', 12)
         .attr('dy', '.35em')
         .text(d => d.name);
 
+    // tickイベントの設定を最後に行う
     simulation.on('tick', () => {
         link
             .attr('x1', d => ((d.source as unknown) as GraphNode).x || 0)
@@ -235,7 +208,10 @@ function initializeGraph(data: GraphData): void {
         node.attr('transform', d => `translate(${d.x || 0},${d.y || 0})`);
     });
 
-    // ノードのダブルクリックイベントを追加
+    // シミュレーションを開始
+    simulation.alpha(1).restart();
+
+    // イベントハンドラーの設定
     node.on('dblclick', (event, d) => {
         vscode.postMessage({
             command: 'openFile',
@@ -243,7 +219,6 @@ function initializeGraph(data: GraphData): void {
         });
     });
 
-    // ノードのマウスオーバーイベントを追加
     node.on('mouseover', (event, d) => {
         tooltip.transition()
             .duration(200)
@@ -256,25 +231,6 @@ function initializeGraph(data: GraphData): void {
         tooltip.transition()
             .duration(500)
             .style('opacity', 0);
-    });
-
-    // リンクの色も親子関係に基づいて設定
-    link.style('stroke', d => {
-        const source = data.nodes.find(n => n.id === d.source);
-        const target = data.nodes.find(n => n.id === d.target);
-        if (!source || !target) return 'var(--vscode-editor-foreground)';
-
-        // 同じディレクトリ内のリンクは、そのディレクトリの色を使用
-        if (source.dirPath === target.dirPath) {
-            return getDirectoryColor(source.dirPath);
-        }
-        return 'var(--vscode-editor-foreground)';
-    })
-    .style('stroke-opacity', d => {
-        const source = data.nodes.find(n => n.id === d.source);
-        const target = data.nodes.find(n => n.id === d.target);
-        // 同じディレクトリ内のリンクは不透明度を上げる
-        return source?.dirPath === target?.dirPath ? 0.6 : 0.2;
     });
 }
 
@@ -364,12 +320,42 @@ interface NetworkClickEvent {
     event: Event;
 }
 
-// メッセージハンドラーの設定
+// フィルタリング処理を更新
+function handleExtensionToggle(extension: string, checked: boolean) {
+    // VSCodeにメッセージを送信
+    vscode.postMessage({
+        command: 'toggleExtension',
+        extension: extension,
+        checked: checked
+    });
+
+    // 既存のグラフをクリア
+    if (simulation) {
+        simulation.stop();
+        simulation = null;
+    }
+    const graphDiv = document.getElementById('graph');
+    if (graphDiv) {
+        graphDiv.innerHTML = '';
+    }
+}
+
+// メッセージハンドラーを更新
 window.addEventListener('message', event => {
     const message = event.data;
     switch (message.command) {
         case 'updateDependencyGraph':
             if (message.data && message.data.nodes && message.data.links) {
+                // ノードのマップを作成
+                const nodeMap = new Map(
+                    message.data.nodes.map(node => [node.id, true])
+                );
+
+                // 有効なリンクのみをフィルタリング
+                const validLinks = message.data.links.filter(link => 
+                    nodeMap.has(link.source) && nodeMap.has(link.target)
+                );
+
                 graphData = {
                     nodes: message.data.nodes.map((node: any) => ({
                         id: node.id,
@@ -378,16 +364,19 @@ window.addEventListener('message', event => {
                         dirPath: node.dirPath,
                         connections: node.connections || 1
                     })),
-                    links: message.data.links.map((link: any) => ({
+                    links: validLinks.map((link: any) => ({
                         source: link.source,
                         target: link.target
                     }))
                 };
+                config = message.data.config;  // 更新された設定を保存
+                
                 // グラフを完全に再描画
                 const graphDiv = document.getElementById('graph');
                 if (graphDiv) {
                     graphDiv.innerHTML = '';
                     initializeGraph(graphData);
+                    createFilterControls();  // 更新された状態でUIを再生成
                 }
             }
             break;
@@ -431,4 +420,51 @@ function getNodeClass(node: GraphNode): string {
     if (isJsFile(node)) return 'js-file';
     if (isJsxFile(node)) return 'jsx-file';
     return 'default-file';
+}
+
+// フィルターUIを生成する関数を更新
+function createFilterControls() {
+    console.log('Creating filter controls with config:', config);
+    
+    const controls = document.querySelector('.controls');
+    if (!controls) {
+        console.error('Controls element not found');
+        return;
+    }
+
+    // 既存のフィルターコンテナを削除
+    const existingContainer = document.querySelector('.filter-container');
+    if (existingContainer) {
+        existingContainer.remove();
+    }
+
+    // 新しいフィルターコンテナを作成
+    const filterContainer = document.createElement('div');
+    filterContainer.className = 'filter-container';
+
+    if (!config || !config.targetExtensions) {
+        console.error('No target extensions found in config');
+        return;
+    }
+
+    // 拡張子ごとのフィルターを作成
+    config.targetExtensions.forEach(({ extension, enabled }) => {
+        const label = document.createElement('label');
+        label.className = 'control-checkbox';
+        
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.id = `toggle${extension.replace('.', '')}`;
+        checkbox.checked = enabled;  // 現在の状態を反映
+        
+        checkbox.addEventListener('change', () => {
+            handleExtensionToggle(extension, checkbox.checked);
+        });
+
+        label.appendChild(checkbox);
+        label.appendChild(document.createTextNode(extension));
+        filterContainer.appendChild(label);
+    });
+
+    controls.appendChild(filterContainer);
 } 

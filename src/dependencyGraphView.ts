@@ -7,10 +7,21 @@ export class DependencyGraphView {
     private panel: vscode.WebviewPanel | undefined;
     private readonly extensionUri: vscode.Uri;
     private provider: DependencyGraphProvider;
+    private messageHandler: (message: any) => Promise<void>;
 
     constructor(extensionUri: vscode.Uri, provider: DependencyGraphProvider) {
         this.extensionUri = extensionUri;
         this.provider = provider;
+
+        // メッセージハンドラーを設定
+        this.messageHandler = async (message: any) => {
+            switch (message.command) {
+                case 'toggleExtension':
+                    await this.handleExtensionToggle(message.extension, message.checked);
+                    break;
+                // ... 他のケース
+            }
+        };
     }
 
     public async show() {
@@ -41,14 +52,7 @@ export class DependencyGraphView {
         
         this.panel.webview.html = this.getWebviewContent(graphData);
 
-        this.panel.webview.onDidReceiveMessage(message => {
-            if (message.command === 'requestData') {
-                this.updateGraph();
-            }
-            if (message.command === 'toggleCss') {
-                this.handleCssToggle(message.checked);
-            }
-        });
+        this.panel.webview.onDidReceiveMessage(this.messageHandler);
 
         this.panel.onDidDispose(() => {
             this.panel = undefined;
@@ -56,70 +60,56 @@ export class DependencyGraphView {
     }
 
     private convertToGraphData(dependencies: Map<string, string[]>) {
-        console.log('Converting dependencies to graph data:', dependencies);
         const nodes: any[] = [];
         const links: any[] = [];
-        const nodeMap = new Map<string, number>();
-
-        // ワークスペースのルートパスを取得
+        const nodeMap = new Map<string, boolean>();
         const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
 
-        // 接続数をカウント
-        const connectionCounts = new Map<string, number>();
-        dependencies.forEach((imports, filePath) => {
-            // 出力の接続数
-            connectionCounts.set(filePath, (connectionCounts.get(filePath) || 0) + imports.length);
-            // 入力の接続数
-            imports.forEach(importPath => {
-                const fullImportPath = path.resolve(path.dirname(filePath), importPath);
-                connectionCounts.set(fullImportPath, (connectionCounts.get(fullImportPath) || 0) + 1);
-            });
-        });
-
-        let index = 0;
-        dependencies.forEach((_, filePath) => {
-            // 相対パスを計算
-            const relativePath = path.relative(workspaceRoot, filePath);
-            const shortPath = path.basename(filePath);
-            // ディレクトリパスのみを取得
-            const dirPath = path.dirname(relativePath);
-            
-            if (!nodeMap.has(filePath)) {
-                nodeMap.set(filePath, index);
-                nodes.push({ 
-                    id: index, 
-                    name: shortPath, 
-                    fullPath: filePath,
-                    dirPath: dirPath === '.' ? '' : dirPath,
-                    connections: connectionCounts.get(filePath) || 0  // 接続数を追加
-                });
-                index++;
+        // まず全てのノードを収集（依存関係の両端）
+        dependencies.forEach((targets, source) => {
+            if (!nodeMap.has(source)) {
+                nodeMap.set(source, true);
             }
-        });
-
-        console.log('Created nodes:', nodes);
-
-        dependencies.forEach((imports, filePath) => {
-            const sourceIndex = nodeMap.get(filePath);
-            imports.forEach(importPath => {
-                try {
-                    const fullImportPath = path.resolve(path.dirname(filePath), importPath);
-                    console.log('Resolving import path:', importPath, 'to:', fullImportPath);
-                    if (nodeMap.has(fullImportPath)) {
-                        const targetIndex = nodeMap.get(fullImportPath);
-                        links.push({
-                            source: sourceIndex,
-                            target: targetIndex
-                        });
-                    }
-                } catch (error) {
-                    console.error('Error resolving import path:', error);
+            targets.forEach(target => {
+                if (!nodeMap.has(target)) {
+                    nodeMap.set(target, true);
                 }
             });
         });
 
-        console.log('Created links:', links);
-        return { nodes, links };
+        // ノードの作成
+        Array.from(nodeMap.keys()).forEach(filePath => {
+            const relativePath = path.relative(workspaceRoot, filePath);
+            const shortPath = path.basename(filePath);
+            const dirPath = path.dirname(relativePath);
+            
+            nodes.push({
+                id: filePath,
+                name: shortPath,
+                fullPath: filePath,
+                dirPath: dirPath === '.' ? '' : dirPath,
+                connections: (dependencies.get(filePath)?.length || 0) +
+                    Array.from(dependencies.values()).filter(deps => deps.includes(filePath)).length
+            });
+        });
+
+        // リンクの作成
+        dependencies.forEach((targets, source) => {
+            targets.forEach(target => {
+                links.push({
+                    source: source,
+                    target: target
+                });
+            });
+        });
+
+        return {
+            nodes,
+            links,
+            config: {
+                targetExtensions: this.provider.getTargetExtensions()
+            }
+        };
     }
 
     private getWebviewContent(graphData: any) {
@@ -141,6 +131,15 @@ export class DependencyGraphView {
             font-src ${webview.cspSource} https:;
         `;
 
+        const webviewData = {
+            ...graphData,
+            config: {
+                targetExtensions: this.provider.getTargetExtensions()
+            }
+        };
+        
+        console.log('Webview data:', webviewData); // デバッグ用ログを追加
+
         return `<!DOCTYPE html>
             <html>
             <head>
@@ -151,7 +150,7 @@ export class DependencyGraphView {
                 <script src="https://d3js.org/d3.v7.min.js"></script>
                 <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
                 <link rel="stylesheet" href="${styleUri}">
-                <script id="graphData" type="application/json">${JSON.stringify(graphData)}</script>
+                <script id="graphData" type="application/json">${JSON.stringify(webviewData)}</script>
             </head>
             <body>
                 <div id="graph"></div>
@@ -160,10 +159,6 @@ export class DependencyGraphView {
                     <button id="toggleForce" class="control-button">
                         <span class="icon">🔗</span>
                     </button>
-                    <label class="control-checkbox">
-                        <input type="checkbox" id="toggleCss" checked>
-                        CSS表示
-                    </label>
                 </div>
                 <script src="${scriptUri}"></script>
             </body>
@@ -174,19 +169,39 @@ export class DependencyGraphView {
         if (this.panel) {
             await this.provider.updateDependencies();
             const dependencies = this.provider.getDependencies();
-            const graphData = this.convertToGraphData(dependencies);
-            this.panel.webview.postMessage({ command: 'updateGraph', data: graphData });
+            const graphData = {
+                nodes: Array.from(dependencies.keys()).map(path => ({
+                    id: path,
+                    name: path.split(/[\\/]/).pop() || '',
+                    fullPath: path,
+                    dirPath: path.split(/[\\/]/).slice(0, -1).join('/'),
+                    connections: dependencies.get(path)?.length || 0
+                })),
+                links: Array.from(dependencies.entries()).flatMap(([source, targets]) =>
+                    targets.map(target => ({
+                        source,
+                        target
+                    }))
+                ),
+                config: {
+                    targetExtensions: this.provider.getTargetExtensions()
+                }
+            };
+            this.panel.webview.postMessage({ 
+                command: 'updateDependencyGraph', 
+                data: graphData 
+            });
         }
     }
 
-    private async handleCssToggle(checked: boolean) {
-        this.provider.setIncludeCss(checked);
+    private async handleExtensionToggle(extension: string, checked: boolean) {
+        this.provider.setExtensionEnabled(extension, checked);
         await this.provider.updateDependencies();
         const dependencies = this.provider.getDependencies();
         const graphData = {
             nodes: Array.from(dependencies.keys()).map(path => ({
                 id: path,
-                name: path.split(/[\\/]/).pop() || '',  // Windows対応のため修正
+                name: path.split(/[\\/]/).pop() || '',
                 fullPath: path,
                 dirPath: path.split(/[\\/]/).slice(0, -1).join('/'),
                 connections: dependencies.get(path)?.length || 0
@@ -196,13 +211,21 @@ export class DependencyGraphView {
                     source,
                     target
                 }))
-            )
+            ),
+            config: {
+                targetExtensions: this.provider.getTargetExtensions()
+            }
         };
         
         this.panel?.webview.postMessage({ 
             command: 'updateDependencyGraph',
             data: graphData
         });
+    }
+
+    public setTargetExtensions(extensions: string[]) {
+        this.provider.setTargetExtensions(extensions);
+        this.updateGraph();
     }
 }
 

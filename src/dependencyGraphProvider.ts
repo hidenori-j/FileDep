@@ -2,9 +2,12 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 
+const DEFAULT_TARGET_EXTENSIONS = ['.js', '.jsx', '.ts', '.tsx', '.vue', '.svelte', '.css'];
+
 export class DependencyGraphProvider {
     private dependencies: Map<string, string[]> = new Map();
-    private includeCss: boolean = true;  // 追加: CSSファイルを含めるかどうかのフラグ
+    private targetExtensions: string[] = DEFAULT_TARGET_EXTENSIONS;
+    private disabledExtensions: Set<string> = new Set();
 
     public async updateDependencies() {
         const workspaceFolders = vscode.workspace.workspaceFolders;
@@ -20,8 +23,6 @@ export class DependencyGraphProvider {
             await this.scanDirectory(folder.uri.fsPath);
         }
 
-        // 依存関係の解決を改善
-        this.resolveDependencies();
         console.log('Final dependencies:', this.dependencies);
     }
 
@@ -38,10 +39,6 @@ export class DependencyGraphProvider {
                         await this.scanDirectory(fullPath);
                     }
                 } else if (this.isTargetFile(file)) {
-                    // CSSファイルを含めない場合はスキップ
-                    if (!this.includeCss && fullPath.toLowerCase().endsWith('.css')) {
-                        continue;
-                    }
                     await this.analyzeDependencies(fullPath);
                 }
             }
@@ -51,8 +48,9 @@ export class DependencyGraphProvider {
     }
 
     private isTargetFile(fileName: string): boolean {
-        // CSSファイルを追加
-        return /\.(js|jsx|ts|tsx|vue|svelte|css)$/.test(fileName);
+        const ext = '.' + fileName.split('.').pop()?.toLowerCase();
+        // ファイルの拡張子が対象拡張子の一つで、かつ無効化されていない場合のみtrue
+        return this.targetExtensions.includes(ext) && !this.disabledExtensions.has(ext);
     }
 
     private async analyzeDependencies(filePath: string) {
@@ -64,50 +62,58 @@ export class DependencyGraphProvider {
             this.dependencies.set(filePath, []);
             
             if (imports.length > 0) {
-                this.dependencies.set(filePath, imports);
+                const resolvedImports = await Promise.all(imports.map(async importPath => {
+                    if (importPath.startsWith('.')) {
+                        const absolutePath = path.resolve(path.dirname(filePath), importPath);
+                        const fileExt = path.extname(filePath).toLowerCase();
+                        
+                        // 拡張子が指定されている場合は直接チェック
+                        if (path.extname(importPath)) {
+                            if (fs.existsSync(absolutePath)) {
+                                return absolutePath;
+                            }
+                            return null;
+                        }
+
+                        // CSSファイルからのインポートは.cssのみを探す
+                        if (fileExt === '.css') {
+                            const cssPath = absolutePath + '.css';
+                            if (fs.existsSync(cssPath)) {
+                                return cssPath;
+                            }
+                            return null;
+                        }
+
+                        // その他のファイルタイプの場合
+                        for (const ext of this.targetExtensions) {
+                            // 直接ファイル
+                            const pathWithExt = absolutePath + ext;
+                            if (fs.existsSync(pathWithExt)) {
+                                return pathWithExt;
+                            }
+
+                            // indexファイル
+                            const indexPath = path.join(absolutePath, `index${ext}`);
+                            if (fs.existsSync(indexPath)) {
+                                return indexPath;
+                            }
+                        }
+                    }
+                    return null;
+                }));
+
+                const validImports = resolvedImports.filter(Boolean) as string[];
+                if (validImports.length > 0) {
+                    this.dependencies.set(filePath, validImports);
+                }
             }
         } catch (error) {
             console.error('Error analyzing file:', filePath, error);
         }
     }
 
-    private resolveDependencies() {
-        const resolvedDeps = new Map<string, string[]>();
-        
-        this.dependencies.forEach((imports, filePath) => {
-            const resolvedImports = imports.map(importPath => {
-                if (importPath.startsWith('.')) {
-                    const absolutePath = path.resolve(path.dirname(filePath), importPath);
-                    // 拡張子の解決を試みる
-                    const extensions = ['.tsx', '.ts', '.jsx', '.js', ''];
-                    for (const ext of extensions) {
-                        const pathWithExt = absolutePath + ext;
-                        if (this.dependencies.has(pathWithExt)) {
-                            return pathWithExt;
-                        }
-                        // index ファイルのチェック
-                        const indexPath = path.join(absolutePath, `index${ext}`);
-                        if (this.dependencies.has(indexPath)) {
-                            return indexPath;
-                        }
-                    }
-                }
-                return null;
-            }).filter(Boolean) as string[];
-
-            resolvedDeps.set(filePath, resolvedImports);
-        });
-
-        this.dependencies = resolvedDeps;
-    }
-
     private extractImports(content: string): string[] {
         const imports = new Set<string>();
-        
-        // CSSファイルからの参照は、フラグがtrueの時のみ収集
-        if (content.toLowerCase().endsWith('.css') && !this.includeCss) {
-            return [];
-        }
         
         const patterns = [
             // ES6 imports
@@ -117,16 +123,18 @@ export class DependencyGraphProvider {
             // dynamic import
             /import\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
             // JSX/TSX specific imports
-            /(?:import|from)\s+['"]([^'"]+)['"]/g
+            /(?:import|from)\s+['"]([^'"]+)['"]/g,
+            // CSS imports (@import)
+            /@import\s+['"]([^'"]+)['"]/g,
+            // CSS url imports
+            /url\s*\(\s*['"]?([^'")\s]+)['"]?\s*\)/g
         ];
 
         patterns.forEach(pattern => {
             let match;
             while ((match = pattern.exec(content)) !== null) {
                 const importPath = match[1];
-                // CSSファイルへの参照も、フラグがtrueの時のみ収集
-                if (importPath.startsWith('.') && 
-                    (this.includeCss || !importPath.toLowerCase().endsWith('.css'))) {
+                if (importPath.startsWith('.')) {
                     imports.add(importPath);
                 }
             }
@@ -139,8 +147,30 @@ export class DependencyGraphProvider {
         return this.dependencies;
     }
 
-    // フラグを設定するメソッドを追加
-    public setIncludeCss(include: boolean) {
-        this.includeCss = include;
+    // 拡張子設定用のメソッドを追加
+    public setTargetExtensions(extensions: string[]) {
+        this.targetExtensions = extensions.map(ext => 
+            ext.startsWith('.') ? ext.toLowerCase() : `.${ext.toLowerCase()}`
+        );
+    }
+
+    public getTargetExtensions(): { extension: string; enabled: boolean }[] {
+        return this.targetExtensions.map(ext => ({
+            extension: ext,
+            enabled: !this.disabledExtensions.has(ext)
+        }));
+    }
+
+    public setExtensionEnabled(extension: string, enabled: boolean) {
+        if (enabled) {
+            this.disabledExtensions.delete(extension);
+        } else {
+            this.disabledExtensions.add(extension);
+        }
+    }
+
+    // 拡張子の有効/無効状態を取得するメソッドを追加
+    public isExtensionEnabled(extension: string): boolean {
+        return !this.disabledExtensions.has(extension);
     }
 } 
