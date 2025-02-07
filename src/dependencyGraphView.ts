@@ -3,6 +3,28 @@ import * as path from 'path';
 import { DependencyGraphProvider } from './dependencyGraphProvider';
 import * as fs from 'fs';
 
+interface GraphNode {
+    id: string;
+    name: string;
+    fullPath: string;
+    dirPath: string;
+    connections: number;
+}
+
+interface GraphLink {
+    source: string;
+    target: string;
+}
+
+interface GraphData {
+    nodes: GraphNode[];
+    links: GraphLink[];
+    config: {
+        targetExtensions: { extension: string; enabled: boolean }[];
+        directories: { path: string; enabled: boolean }[];
+    };
+}
+
 export class DependencyGraphView {
     private panel: vscode.WebviewPanel | undefined;
     private readonly extensionUri: vscode.Uri;
@@ -49,10 +71,11 @@ export class DependencyGraphView {
         );
 
         await this.provider.updateDependencies();
-        const dependencies = this.provider.getDependencies();
-        const graphData = this.convertToGraphData(dependencies);
+        const dependencies = await this.provider.getDependencies();
+        const uniqueDirectories = await this.provider.getUniqueDirectories();
+        const graphData = this.convertToGraphData(dependencies, uniqueDirectories);
         
-        this.panel.webview.html = this.getWebviewContent(graphData);
+        this.panel.webview.html = await this.getWebviewContent(graphData);
 
         this.panel.webview.onDidReceiveMessage(this.messageHandler);
 
@@ -61,27 +84,26 @@ export class DependencyGraphView {
         });
     }
 
-    private convertToGraphData(dependencies: Map<string, string[]>) {
-        const nodes: any[] = [];
-        const links: any[] = [];
+    private convertToGraphData(dependencies: Map<string, string[]>, uniqueDirectories: string[]): GraphData {
+        const nodes: GraphNode[] = [];
+        const links: GraphLink[] = [];
         const nodeMap = new Map<string, boolean>();
         const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
-        const uniqueDirectories = this.provider.getUniqueDirectories();
 
         // まず全てのノードを収集（依存関係の両端）
-        dependencies.forEach((targets, source) => {
+        for (const [source, targets] of dependencies) {
             if (!nodeMap.has(source)) {
                 nodeMap.set(source, true);
             }
-            targets.forEach(target => {
+            for (const target of targets) {
                 if (!nodeMap.has(target)) {
                     nodeMap.set(target, true);
                 }
-            });
-        });
+            }
+        }
 
         // ノードの作成
-        Array.from(nodeMap.keys()).forEach(filePath => {
+        for (const filePath of nodeMap.keys()) {
             const relativePath = path.relative(workspaceRoot, filePath);
             const shortPath = path.basename(filePath);
             const dirPath = path.dirname(relativePath);
@@ -94,24 +116,24 @@ export class DependencyGraphView {
                 connections: (dependencies.get(filePath)?.length || 0) +
                     Array.from(dependencies.values()).filter(deps => deps.includes(filePath)).length
             });
-        });
+        }
 
         // リンクの作成
-        dependencies.forEach((targets, source) => {
-            targets.forEach(target => {
+        for (const [source, targets] of dependencies) {
+            for (const target of targets) {
                 links.push({
-                    source: source,
-                    target: target
+                    source,
+                    target
                 });
-            });
-        });
+            }
+        }
 
         return {
             nodes,
             links,
             config: {
                 targetExtensions: this.provider.getTargetExtensions(),
-                directories: uniqueDirectories.map(dir => ({
+                directories: uniqueDirectories.map((dir: string) => ({
                     path: dir,
                     enabled: this.provider.isDirectoryEnabled(dir)
                 }))
@@ -119,7 +141,7 @@ export class DependencyGraphView {
         };
     }
 
-    private getWebviewContent(graphData: any) {
+    private async getWebviewContent(graphData: any) {
         const webview = this.panel!.webview;
         const scriptUri = webview.asWebviewUri(
             vscode.Uri.joinPath(this.extensionUri, 'out', 'webview', 'script.js')
@@ -128,8 +150,6 @@ export class DependencyGraphView {
             vscode.Uri.joinPath(this.extensionUri, 'src', 'webview', 'style.css')
         );
 
-        // CSPをより寛容に設定
-        const nonce = getNonce();
         const csp = `
             default-src 'none';
             img-src ${webview.cspSource} https: data:;
@@ -138,11 +158,12 @@ export class DependencyGraphView {
             font-src ${webview.cspSource} https:;
         `;
 
+        const uniqueDirectories = await this.provider.getUniqueDirectories();
         const webviewData = {
             ...graphData,
             config: {
                 targetExtensions: this.provider.getTargetExtensions(),
-                directories: this.provider.getUniqueDirectories().map(dir => ({
+                directories: uniqueDirectories.map(dir => ({
                     path: dir,
                     enabled: this.provider.isDirectoryEnabled(dir)
                 }))
@@ -179,29 +200,10 @@ export class DependencyGraphView {
     private async updateGraph(): Promise<void> {
         if (this.panel) {
             await this.provider.updateDependencies();
-            const dependencies = this.provider.getDependencies();
-            const graphData = {
-                nodes: Array.from(dependencies.keys()).map(path => ({
-                    id: path,
-                    name: path.split(/[\\/]/).pop() || '',
-                    fullPath: path,
-                    dirPath: path.split(/[\\/]/).slice(0, -1).join('/'),
-                    connections: dependencies.get(path)?.length || 0
-                })),
-                links: Array.from(dependencies.entries()).flatMap(([source, targets]) =>
-                    targets.map(target => ({
-                        source,
-                        target
-                    }))
-                ),
-                config: {
-                    targetExtensions: this.provider.getTargetExtensions(),
-                    directories: this.provider.getUniqueDirectories().map(dir => ({
-                        path: dir,
-                        enabled: this.provider.isDirectoryEnabled(dir)
-                    }))
-                }
-            };
+            const dependencies = await this.provider.getDependencies();
+            const uniqueDirectories = await this.provider.getUniqueDirectories();
+            const graphData = this.convertToGraphData(dependencies, uniqueDirectories);
+            
             this.panel.webview.postMessage({ 
                 command: 'updateDependencyGraph', 
                 data: graphData 
@@ -211,45 +213,17 @@ export class DependencyGraphView {
 
     private async handleExtensionToggle(extension: string, checked: boolean) {
         this.provider.setExtensionEnabled(extension, checked);
-        await this.provider.updateDependencies();
-        const dependencies = this.provider.getDependencies();
-        const graphData = {
-            nodes: Array.from(dependencies.keys()).map(path => ({
-                id: path,
-                name: path.split(/[\\/]/).pop() || '',
-                fullPath: path,
-                dirPath: path.split(/[\\/]/).slice(0, -1).join('/'),
-                connections: dependencies.get(path)?.length || 0
-            })),
-            links: Array.from(dependencies.entries()).flatMap(([source, targets]) =>
-                targets.map(target => ({
-                    source,
-                    target
-                }))
-            ),
-            config: {
-                targetExtensions: this.provider.getTargetExtensions(),
-                directories: this.provider.getUniqueDirectories().map(dir => ({
-                    path: dir,
-                    enabled: this.provider.isDirectoryEnabled(dir)
-                }))
-            }
-        };
-        
-        this.panel?.webview.postMessage({ 
-            command: 'updateDependencyGraph',
-            data: graphData
-        });
-    }
-
-    private async handleDirectoryToggle(directory: string, checked: boolean) {
-        this.provider.setDirectoryEnabled(directory, checked);
         await this.updateGraph();
     }
 
-    public setTargetExtensions(extensions: string[]) {
+    private async handleDirectoryToggle(directory: string, checked: boolean) {
+        await this.provider.setDirectoryEnabled(directory, checked);
+        await this.updateGraph();
+    }
+
+    public async setTargetExtensions(extensions: string[]) {
         this.provider.setTargetExtensions(extensions);
-        this.updateGraph();
+        await this.updateGraph();
     }
 }
 
