@@ -40,6 +40,7 @@ interface ExtensionConfig {
 
 interface GraphConfig {
     targetExtensions: ExtensionConfig[];
+    directories: { path: string; enabled: boolean }[];
 }
 
 // グローバル変数に追加
@@ -442,29 +443,67 @@ function createFilterControls() {
     const filterContainer = document.createElement('div');
     filterContainer.className = 'filter-container';
 
-    if (!config || !config.targetExtensions) {
-        console.error('No target extensions found in config');
-        return;
-    }
+    // 拡張子フィルター
+    if (config && config.targetExtensions) {
+        const extensionsContainer = document.createElement('div');
+        extensionsContainer.className = 'filter-section';
+        extensionsContainer.innerHTML = '<h3>拡張子フィルター</h3>';
 
-    // 拡張子ごとのフィルターを作成
-    config.targetExtensions.forEach(({ extension, enabled }) => {
-        const label = document.createElement('label');
-        label.className = 'control-checkbox';
-        
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.id = `toggle${extension.replace('.', '')}`;
-        checkbox.checked = enabled;  // 現在の状態を反映
-        
-        checkbox.addEventListener('change', () => {
-            handleExtensionToggle(extension, checkbox.checked);
+        config.targetExtensions.forEach(({ extension, enabled }) => {
+            const label = document.createElement('label');
+            label.className = 'control-checkbox';
+            
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.id = `toggle${extension.replace('.', '')}`;
+            checkbox.checked = enabled;
+            
+            checkbox.addEventListener('change', () => {
+                handleExtensionToggle(extension, checkbox.checked);
+            });
+
+            label.appendChild(checkbox);
+            label.appendChild(document.createTextNode(extension));
+            extensionsContainer.appendChild(label);
         });
 
-        label.appendChild(checkbox);
-        label.appendChild(document.createTextNode(extension));
-        filterContainer.appendChild(label);
-    });
+        filterContainer.appendChild(extensionsContainer);
+    }
+
+    // ディレクトリフィルター
+    if (config && config.directories) {
+        const directoriesContainer = document.createElement('div');
+        directoriesContainer.className = 'filter-section';
+        directoriesContainer.innerHTML = '<h3>ディレクトリフィルター</h3>';
+
+        config.directories.forEach(({ path, enabled }) => {
+            const label = document.createElement('label');
+            label.className = 'control-checkbox';
+            
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.id = `toggleDir${path.replace(/[\/\\]/g, '_')}`;
+            checkbox.checked = enabled;
+            
+            checkbox.addEventListener('change', () => {
+                handleDirectoryToggle(path, checkbox.checked);
+            });
+
+            label.appendChild(checkbox);
+            label.appendChild(document.createTextNode(path || '(root)'));
+            directoriesContainer.appendChild(label);
+        });
+
+        filterContainer.appendChild(directoriesContainer);
+    }
 
     controls.appendChild(filterContainer);
+}
+
+function handleDirectoryToggle(directory: string, checked: boolean) {
+    vscode.postMessage({
+        command: 'toggleDirectory',
+        directory: directory,
+        checked: checked
+    });
 } 

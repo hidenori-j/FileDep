@@ -80,17 +80,32 @@ svg {
     top: 20px;
     right: 20px;
     display: flex;
+    flex-direction: column;
     gap: 10px;
-    align-items: center;
+    z-index: 1000;
 }
 .control-checkbox {
     background: var(--vscode-button-background);
-    padding: 5px 10px;
+    padding: 8px 12px;
     border-radius: 4px;
     color: var(--vscode-button-foreground);
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+    font-size: 12px;
+    transition: all 0.2s ease;
+}
+.control-checkbox:hover {
+    background: var(--vscode-button-hoverBackground);
+    transform: translateX(2px);
+}
+.control-checkbox input[type="checkbox"] {
+    margin: 0;
+    cursor: pointer;
+    width: 16px;
+    height: 16px;
 }
 .node.css-file.hidden {
     visibility: hidden;
@@ -119,23 +134,30 @@ svg {
 }
 .filter-container {
     display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
+    flex-direction: column;
+    gap: 16px;
     margin-top: 10px;
+    background: var(--vscode-editor-background);
+    padding: 16px;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    max-height: 80vh;
+    overflow-y: auto;
+    width: 300px;
 }
-.control-checkbox {
-    background: var(--vscode-button-background);
-    padding: 5px 10px;
-    border-radius: 4px;
-    color: var(--vscode-button-foreground);
+.filter-section {
     display: flex;
-    align-items: center;
-    gap: 5px;
-    cursor: pointer;
-    user-select: none;
+    flex-direction: column;
+    gap: 8px;
 }
-.control-checkbox:hover {
-    background: var(--vscode-button-hoverBackground);
+.filter-section h3 {
+    margin: 0;
+    color: var(--vscode-editor-foreground);
+    font-size: 14px;
+    font-weight: 600;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--vscode-editor-foreground);
+    opacity: 0.8;
 }
 .node.hidden {
     opacity: 0;
@@ -144,4 +166,23 @@ svg {
 .link.hidden {
     opacity: 0;
     pointer-events: none;
+}
+.filter-section-content {
+    max-height: 200px;
+    overflow-y: auto;
+    padding-right: 8px;
+}
+.filter-section-content::-webkit-scrollbar {
+    width: 6px;
+}
+.filter-section-content::-webkit-scrollbar-track {
+    background: var(--vscode-editor-background);
+    border-radius: 3px;
+}
+.filter-section-content::-webkit-scrollbar-thumb {
+    background: var(--vscode-scrollbarSlider-background);
+    border-radius: 3px;
+}
+.filter-section-content::-webkit-scrollbar-thumb:hover {
+    background: var(--vscode-scrollbarSlider-hoverBackground);
 } 

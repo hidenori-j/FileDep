@@ -19,7 +19,9 @@ export class DependencyGraphView {
                 case 'toggleExtension':
                     await this.handleExtensionToggle(message.extension, message.checked);
                     break;
-                // ... 他のケース
+                case 'toggleDirectory':
+                    await this.handleDirectoryToggle(message.directory, message.checked);
+                    break;
             }
         };
     }
@@ -64,6 +66,7 @@ export class DependencyGraphView {
         const links: any[] = [];
         const nodeMap = new Map<string, boolean>();
         const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+        const uniqueDirectories = this.provider.getUniqueDirectories();
 
         // まず全てのノードを収集（依存関係の両端）
         dependencies.forEach((targets, source) => {
@@ -107,7 +110,11 @@ export class DependencyGraphView {
             nodes,
             links,
             config: {
-                targetExtensions: this.provider.getTargetExtensions()
+                targetExtensions: this.provider.getTargetExtensions(),
+                directories: uniqueDirectories.map(dir => ({
+                    path: dir,
+                    enabled: this.provider.isDirectoryEnabled(dir)
+                }))
             }
         };
     }
@@ -134,7 +141,11 @@ export class DependencyGraphView {
         const webviewData = {
             ...graphData,
             config: {
-                targetExtensions: this.provider.getTargetExtensions()
+                targetExtensions: this.provider.getTargetExtensions(),
+                directories: this.provider.getUniqueDirectories().map(dir => ({
+                    path: dir,
+                    enabled: this.provider.isDirectoryEnabled(dir)
+                }))
             }
         };
         
@@ -184,7 +195,11 @@ export class DependencyGraphView {
                     }))
                 ),
                 config: {
-                    targetExtensions: this.provider.getTargetExtensions()
+                    targetExtensions: this.provider.getTargetExtensions(),
+                    directories: this.provider.getUniqueDirectories().map(dir => ({
+                        path: dir,
+                        enabled: this.provider.isDirectoryEnabled(dir)
+                    }))
                 }
             };
             this.panel.webview.postMessage({ 
@@ -213,7 +228,11 @@ export class DependencyGraphView {
                 }))
             ),
             config: {
-                targetExtensions: this.provider.getTargetExtensions()
+                targetExtensions: this.provider.getTargetExtensions(),
+                directories: this.provider.getUniqueDirectories().map(dir => ({
+                    path: dir,
+                    enabled: this.provider.isDirectoryEnabled(dir)
+                }))
             }
         };
         
@@ -221,6 +240,11 @@ export class DependencyGraphView {
             command: 'updateDependencyGraph',
             data: graphData
         });
+    }
+
+    private async handleDirectoryToggle(directory: string, checked: boolean) {
+        this.provider.setDirectoryEnabled(directory, checked);
+        await this.updateGraph();
     }
 
     public setTargetExtensions(extensions: string[]) {
