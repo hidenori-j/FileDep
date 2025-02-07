@@ -86,7 +86,6 @@
                         "type": "string"
                     },
                     "default": [
-                        "src",
                         "src/utils",
                         "src/webview",
                         "src/components",

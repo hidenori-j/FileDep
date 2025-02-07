@@ -213,6 +213,7 @@ export class DependencyGraphView {
 
     private async handleExtensionToggle(extension: string, checked: boolean) {
         this.provider.setExtensionEnabled(extension, checked);
+        await this.provider.updateDependencies();
         await this.updateGraph();
     }
 

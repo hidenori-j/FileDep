@@ -59,6 +59,12 @@ export class DependencyGraphProvider {
         
         // 双方向の依存関係をマージ
         for (const [file, deps] of this.dependencies.entries()) {
+            // 無効化された拡張子のファイルはスキップ
+            const fileExt = path.extname(file).toLowerCase();
+            if (this.disabledExtensions.has(fileExt)) {
+                continue;
+            }
+
             // ワークスペースからの相対パスに変換
             const relativePath = path.relative(workspaceRoot, file);
             const fileDir = path.dirname(relativePath);
@@ -71,6 +77,11 @@ export class DependencyGraphProvider {
             
             // フィルタリングされていない依存関係のみを追加
             for (const dep of deps) {
+                const depExt = path.extname(dep).toLowerCase();
+                if (this.disabledExtensions.has(depExt)) {
+                    continue;
+                }
+
                 const relativeDepPath = path.relative(workspaceRoot, dep);
                 const depDir = path.dirname(relativeDepPath);
                 if (this.isDirectoryEnabled(depDir)) {
@@ -82,6 +93,11 @@ export class DependencyGraphProvider {
             const reverseDeps = this.reverseDependencies.get(file);
             if (reverseDeps) {
                 for (const dep of reverseDeps) {
+                    const depExt = path.extname(dep).toLowerCase();
+                    if (this.disabledExtensions.has(depExt)) {
+                        continue;
+                    }
+
                     const relativeDepPath = path.relative(workspaceRoot, dep);
                     const depDir = path.dirname(relativeDepPath);
                     if (this.isDirectoryEnabled(depDir)) {
@@ -149,10 +165,15 @@ export class DependencyGraphProvider {
         }
 
         // 親ディレクトリのチェック
-        let currentDir = directory;
-        while (currentDir !== '.' && currentDir !== '') {
-            currentDir = path.dirname(currentDir);
-            if (this.disabledDirectories.has(currentDir)) {
+        const parts = directory.split(/[\\/]/);
+        let currentPath = '';
+        
+        for (let i = 0; i < parts.length; i++) {
+            if (i > 0) {
+                currentPath += '/';
+            }
+            currentPath += parts[i];
+            if (this.disabledDirectories.has(currentPath)) {
                 return false;
             }
         }
