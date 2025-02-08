@@ -7,7 +7,7 @@ node_modules/
 
 # VSCode関連
 .vscode-test/
-*.vsix
+.vsix
 
 # ログファイル
 *.log

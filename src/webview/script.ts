@@ -3,7 +3,7 @@ declare function acquireVsCodeApi(): any;
 const vscode = acquireVsCodeApi();
 
 // イベントハンドラーの型定義を追加
-interface D3EventBase<GElement extends d3.BaseType, Datum> extends d3.D3Event<GElement, Datum> {
+interface D3EventBase<GElement extends d3.BaseType, Datum> {
     type: string;
     target: EventTarget;
     currentTarget: EventTarget;
@@ -12,8 +12,6 @@ interface D3EventBase<GElement extends d3.BaseType, Datum> extends d3.D3Event<GE
     preventDefault(): void;
     stopPropagation(): void;
 }
-
-interface NodeClickEvent extends D3EventBase<SVGGElement, GraphNode> {}
 
 // グローバル変数
 let simulation: d3.Simulation<GraphNode, GraphLink> | null = null;
@@ -184,7 +182,7 @@ function initializeGraph(data: GraphData): void {
                 d.fy = null;
             });
 
-        node.call(drag);
+        node.call(drag as any);  // 一時的な型キャストを使用
 
         // クリックイベントの設定
         node.on('click', function(event: Event) {
@@ -346,9 +344,10 @@ function initializeGraph(data: GraphData): void {
 }
 
 // イベントハンドラーの型定義を更新
-interface NodeClickEvent extends d3.D3Event<SVGGElement, GraphNode> {
-    currentTarget: SVGGElement;
-}
+// 重複した定義を削除
+// interface NodeClickEvent extends d3.D3Event<SVGGElement, GraphNode> {
+//     currentTarget: SVGGElement;
+// }
 
 // イベントハンドラーの型定義
 function handleResize(): void {

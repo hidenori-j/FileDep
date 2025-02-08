@@ -7,17 +7,22 @@ import * as path from 'path';
 export class DependencyGraphProvider {
     private dependencies: Map<string, Set<string>> = new Map();
     private reverseDependencies: Map<string, Set<string>> = new Map();
-    private targetExtensions: string[] = ['.js', '.ts', '.jsx', '.tsx', '.css', '.html'];
+    private targetExtensions: string[] = ['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.css', '.html'];
     private disabledExtensions: Set<string> = new Set();
     private disabledDirectories: Set<string> = new Set();
 
-    private fileCollector: FileCollector;
-    private pathResolver: PathResolver;
-    private dependencyAnalyzer: DependencyAnalyzer;
+    private fileCollector!: FileCollector;
+    private pathResolver!: PathResolver;
+    private dependencyAnalyzer!: DependencyAnalyzer;
 
     constructor() {
-        this.fileCollector = new FileCollector(this.targetExtensions, this.disabledExtensions);
-        this.pathResolver = new PathResolver(this.targetExtensions);
+        this.initializeServices();
+    }
+
+    private initializeServices() {
+        const extensions = [...this.targetExtensions];
+        this.fileCollector = new FileCollector(extensions, this.disabledExtensions);
+        this.pathResolver = new PathResolver(extensions);
         this.dependencyAnalyzer = new DependencyAnalyzer(this.pathResolver);
     }
 
@@ -118,9 +123,7 @@ export class DependencyGraphProvider {
         this.targetExtensions = extensions.map(ext => 
             ext.startsWith('.') ? ext.toLowerCase() : `.${ext.toLowerCase()}`
         );
-        this.fileCollector = new FileCollector(this.targetExtensions, this.disabledExtensions);
-        this.pathResolver = new PathResolver(this.targetExtensions);
-        this.dependencyAnalyzer = new DependencyAnalyzer(this.pathResolver);
+        this.initializeServices();
     }
 
     public getTargetExtensions(): { extension: string; enabled: boolean }[] {

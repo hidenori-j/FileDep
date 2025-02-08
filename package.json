@@ -96,6 +96,7 @@
                         "src/hooks",
                         "src/assets",
                         "src/styles",
+                        "src/lib",
                         "test",
                         "tests",
                         "lib",
