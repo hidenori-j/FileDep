@@ -61,60 +61,6 @@ let initialExtensions: ExtensionConfig[] = [];  // 初期の拡張子リスト�
 let toggleForceButton: HTMLButtonElement;
 let svg: d3.Selection<SVGGElement, unknown, HTMLElement, any>;
 
-// メインの初期化関数
-window.addEventListener('load', () => {
-    try {
-        const graphDataElement = document.getElementById('graphData');
-        if (!graphDataElement) {
-            throw new Error('Graph data element not found');
-        }
-        
-        const parsedData = JSON.parse(graphDataElement.textContent || '{}');
-        graphData = parsedData as GraphData;
-        config = parsedData.config as GraphConfig;
-
-        // 実際のノードから拡張子を収集
-        const existingExtensions = new Set<string>();
-        graphData.nodes.forEach(node => {
-            const ext = node.fullPath.match(/\.[^.]+$/)?.[0];
-            if (ext) {
-                existingExtensions.add(ext.toLowerCase());
-            }
-        });
-
-        // 設定された拡張子のうち、実際に存在するもののみを保持
-        initialExtensions = config.targetExtensions.filter(
-            ({ extension }) => existingExtensions.has(extension.toLowerCase())
-        );
-        
-        if (!graphData || !graphData.nodes || !graphData.links) {
-            throw new Error('Invalid graph data format');
-        }
-        
-        console.log('Parsed config:', config);
-        
-        width = window.innerWidth;
-        height = window.innerHeight;
-        toggleForceButton = document.getElementById('toggleForce') as HTMLButtonElement;
-        if (!toggleForceButton) {
-            throw new Error('Toggle force button not found');
-        }
-        
-        // フィルターUIを生成（グラフの初期化前に行う）
-        createFilterControls();
-        
-        console.log('Initializing graph with data:', graphData);
-        initializeGraph(graphData);
-        
-        // イベントリスナーの設定
-        window.addEventListener('resize', handleResize);
-        toggleForceButton.addEventListener('click', handleToggleForce);
-        
-    } catch (error) {
-        console.error('Failed to initialize graph:', error);
-    }
-});
-
 // 色生成のためのヘルパー関数を更新
 const directoryColors = new Map<string, string>();
 
@@ -153,19 +99,43 @@ function getDirectoryColor(dirPath: string): string {
         }
     }
 
-    // マッチするディレクトリが見つかった場合
+    // マッチするディレクトリが見つかった場合、その色を使用または生成
     if (bestMatchDir) {
-        if (!directoryColors.has(bestMatchDir)) {
-            // 新しい色を生成
-            const hue = Math.abs(hashString(bestMatchDir)) % 360;
-            const newColor = `hsl(${hue}, 70%, 50%)`;
-            directoryColors.set(bestMatchDir, newColor);
+        // 親ディレクトリの色を探す
+        if (directoryColors.has(bestMatchDir)) {
+            const color = directoryColors.get(bestMatchDir)!;
+            directoryColors.set(dirPath, color); // 子ディレクトリにも同じ色を設定
+            return color;
         }
-        return directoryColors.get(bestMatchDir)!;
+
+        // 新しい色を生成
+        const hue = Math.abs(hashString(bestMatchDir)) % 360;
+        const color = `hsl(${hue}, 70%, 50%)`;
+        directoryColors.set(bestMatchDir, color);
+        directoryColors.set(dirPath, color); // 子ディレクトリにも同じ色を設定
+        return color;
     }
 
     // フィルターに含まれるディレクトリが見つからない場合はデフォルトの色を返す
     return 'hsl(0, 0%, 70%)';  // グレー
+}
+
+// 初期化時にディレクトリの色を生成
+function initializeDirectoryColors() {
+    directoryColors.clear();
+    if (config && config.directories) {
+        // ディレクトリを階層の浅い順にソート
+        const sortedDirs = [...config.directories].sort((a, b) => {
+            const depthA = a.path.split(/[\/\\]/).length;
+            const depthB = b.path.split(/[\/\\]/).length;
+            return depthA - depthB;
+        });
+
+        // 階層順に色を割り当て
+        for (const dir of sortedDirs) {
+            getDirectoryColor(dir.path); // この呼び出しで色が生成・キャッシュされる
+        }
+    }
 }
 
 // 文字列からハッシュ値を生成する関数
@@ -341,7 +311,12 @@ function initializeGraph(data: GraphData): void {
                 const size = (8 + Math.sqrt(d.connections || 1) * 6) * 0.75;
                 const shapeType = (window as any).shapes.getShapeType(d.fullPath);
                 (window as any).shapes.shapeDefinitions[shapeType].createNodeShape(element, size);
-                element.select('.node-shape').style('fill', () => getDirectoryColor(d.dirPath || ''));
+                // ディレクトリに基づいて色を設定
+                const dirColor = getDirectoryColor(d.dirPath || '');
+                element.select('.node-shape')
+                    .style('fill', dirColor)
+                    .style('stroke', '#fff')
+                    .style('stroke-width', '2px');
             } catch (error) {
                 console.error('ノード形状の作成エラー:', error);
             }
@@ -385,6 +360,9 @@ function initializeGraph(data: GraphData): void {
 
         // シミュレーションを開始
         simulation.alpha(1).restart();
+
+        // ノードの表示/非表示状態を更新
+        updateNodeVisibility();
 
     } catch (error) {
         console.error('グラフの初期化エラー:', error);
@@ -513,47 +491,43 @@ window.addEventListener('message', event => {
     switch (message.command) {
         case 'updateDependencyGraph':
             if (message.data && message.data.nodes && message.data.links) {
-                // ノードのマップを作成
-                const nodeMap = new Map(
-                    message.data.nodes.map((node: GraphNode) => [node.id, true])
-                );
-
-                // 有効なリンクのみをフィルタリング
-                const validLinks = message.data.links.filter((link: { source: string; target: string }) => 
-                    nodeMap.has(link.source) && nodeMap.has(link.target)
-                );
-
-                graphData = {
-                    nodes: message.data.nodes.map((node: any) => ({
-                        id: node.id,
-                        name: node.name,
-                        fullPath: node.fullPath,
-                        dirPath: node.dirPath,
-                        connections: node.connections || 1
-                    })),
-                    links: validLinks.map((link: any) => ({
-                        source: link.source,
-                        target: link.target
-                    }))
-                };
+                // 現在のディレクトリの状態を保存
+                const currentState = new Map<string, boolean>();
+                if (config && config.directories) {
+                    config.directories.forEach(dir => {
+                        const checkbox = document.getElementById(`toggleDir${dir.path.replace(/[\/\\]/g, '_')}`) as HTMLInputElement;
+                        if (checkbox) {
+                            currentState.set(dir.path, checkbox.checked);
+                        }
+                    });
+                }
 
                 // 新しい設定を適用
                 config = message.data.config;
-                
-                // 初期の拡張子リストの状態を更新（enabled状態のみ）
-                initialExtensions = initialExtensions.map(ext => ({
-                    ...ext,
-                    enabled: message.data.config.targetExtensions.find(
-                        (newExt: ExtensionConfig) => newExt.extension === ext.extension
-                    )?.enabled ?? false
-                }));
-                
-                // グラフを完全に再描画
+
+                // 保存した状態を新しい設定に反映
+                if (config && config.directories) {
+                    config.directories = config.directories.map(dir => ({
+                        ...dir,
+                        enabled: currentState.has(dir.path) ? currentState.get(dir.path)! : dir.enabled
+                    }));
+                }
+
+                // グラフデータを更新
+                graphData = {
+                    nodes: message.data.nodes,
+                    links: message.data.links
+                };
+
+                // 色を再初期化
+                initializeDirectoryColors();
+
+                // UIを再描画
                 const graphDiv = document.getElementById('graph');
                 if (graphDiv) {
                     graphDiv.innerHTML = '';
                     initializeGraph(graphData);
-                    createFilterControls();  // 更新された状態でUIを再生成
+                    createFilterControls();
                 }
             }
             break;
@@ -691,40 +665,310 @@ function createFilterControls() {
         directoriesContainer.className = 'filter-section';
         directoriesContainer.innerHTML = '<h3>ディレクトリフィルター</h3>';
 
-        config.directories.forEach(({ path, enabled }) => {
-            const label = document.createElement('label');
-            label.className = 'control-checkbox';
-            
-            const checkbox = document.createElement('input');
-            checkbox.type = 'checkbox';
-            checkbox.id = `toggleDir${path.replace(/[\/\\]/g, '_')}`;
-            checkbox.checked = enabled;
-            
-            checkbox.addEventListener('change', () => {
-                handleDirectoryToggle(path, checkbox.checked);
-            });
+        // ディレクトリツリーを構築
+        const directoryTree = buildDirectoryTree(config.directories);
+        
+        // ツリーを再帰的にレンダリング
+        const treeContainer = document.createElement('div');
+        treeContainer.className = 'directory-tree';
+        renderDirectoryTree(directoryTree, treeContainer, 0);
 
-            // カラーパレットを追加
-            const colorPalette = document.createElement('span');
-            colorPalette.className = 'color-palette';
-            colorPalette.style.backgroundColor = getDirectoryColor(path);
-
-            label.appendChild(checkbox);
-            label.appendChild(colorPalette);
-            label.appendChild(document.createTextNode(path || '(root)'));
-            directoriesContainer.appendChild(label);
-        });
-
+        directoriesContainer.appendChild(treeContainer);
         filterContainer.appendChild(directoriesContainer);
     }
 
     controls.appendChild(filterContainer);
 }
 
+// ディレクトリツリーを構築する関数
+interface DirectoryNode {
+    path: string;
+    enabled: boolean;
+    children: Map<string, DirectoryNode>;
+    parent?: DirectoryNode;  // 親ノードへの参照を追加
+}
+
+function buildDirectoryTree(directories: { path: string; enabled: boolean }[]): Map<string, DirectoryNode> {
+    const root = new Map<string, DirectoryNode>();
+
+    // ディレクトリを深さでソート（浅い順）
+    const sortedDirs = [...directories].sort((a, b) => {
+        const depthA = a.path.split(/[\/\\]/).length;
+        const depthB = b.path.split(/[\/\\]/).length;
+        return depthA - depthB;
+    });
+
+    // ノードを取得または作成する補助関数
+    function getOrCreateNode(path: string, enabled: boolean, parent?: DirectoryNode): DirectoryNode {
+        const parts = path.split(/[\/\\]/);
+        let currentLevel = root;
+        let currentPath = '';
+        let currentNode: DirectoryNode | undefined;
+
+        for (const part of parts) {
+            currentPath = currentPath ? `${currentPath}/${part}` : part;
+            
+            if (!currentLevel.has(part)) {
+                const newNode: DirectoryNode = {
+                    path: currentPath,
+                    enabled: enabled,
+                    children: new Map(),
+                    parent: currentNode
+                };
+                currentLevel.set(part, newNode);
+                currentNode = newNode;
+            } else {
+                currentNode = currentLevel.get(part)!;
+            }
+            currentLevel = currentNode.children;
+        }
+
+        return currentNode!;
+    }
+
+    // ディレクトリツリーを構築
+    for (const dir of sortedDirs) {
+        const node = getOrCreateNode(dir.path, dir.enabled);
+        
+        // 親が無効な場合、子も無効にする
+        if (node.parent && !node.parent.enabled) {
+            node.enabled = false;
+        }
+    }
+
+    return root;
+}
+
+// ディレクトリツリーをレンダリングする関数
+function renderDirectoryTree(tree: Map<string, DirectoryNode>, container: HTMLElement, depth: number) {
+    for (const [name, node] of tree) {
+        const itemContainer = document.createElement('div');
+        itemContainer.className = 'directory-item';
+        itemContainer.style.paddingLeft = `${depth * 20}px`;
+
+        const label = document.createElement('label');
+        label.className = 'control-checkbox';
+        
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.id = `toggleDir${node.path.replace(/[\/\\]/g, '_')}`;
+        checkbox.checked = node.enabled;
+        
+        // チェックボックスの状態変更時の処理を更新
+        checkbox.addEventListener('change', () => {
+            updateDirectoryState(node, checkbox.checked);
+        });
+
+        // カラーパレットを追加
+        const colorPalette = document.createElement('span');
+        colorPalette.className = 'color-palette';
+        colorPalette.style.backgroundColor = getDirectoryColor(node.path);
+
+        // 展開/折りたたみアイコンを追加（子ノードがある場合のみ）
+        if (node.children.size > 0) {
+            const toggleIcon = document.createElement('span');
+            toggleIcon.className = 'directory-toggle';
+            toggleIcon.textContent = '▼';
+            label.appendChild(toggleIcon);
+
+            // クリックイベントを追加
+            toggleIcon.addEventListener('click', (e) => {
+                e.preventDefault();
+                const childContainer = itemContainer.querySelector('.directory-children');
+                if (childContainer) {
+                    const isHidden = childContainer.classList.toggle('hidden');
+                    toggleIcon.textContent = isHidden ? '▶' : '▼';
+                }
+            });
+        }
+
+        label.appendChild(checkbox);
+        label.appendChild(colorPalette);
+        label.appendChild(document.createTextNode(name));
+        itemContainer.appendChild(label);
+
+        // 子ノードがある場合は再帰的にレンダリング
+        if (node.children.size > 0) {
+            const childContainer = document.createElement('div');
+            childContainer.className = 'directory-children';
+            renderDirectoryTree(node.children, childContainer, depth + 1);
+            itemContainer.appendChild(childContainer);
+        }
+
+        container.appendChild(itemContainer);
+    }
+}
+
+// ディレクトリの状態を更新する関数
+function updateDirectoryState(node: DirectoryNode, enabled: boolean) {
+    // 現在のノードの状態を更新
+    node.enabled = enabled;
+    
+    // チェックボックスの状態を更新
+    const checkbox = document.getElementById(`toggleDir${node.path.replace(/[\/\\]/g, '_')}`) as HTMLInputElement;
+    if (checkbox) {
+        checkbox.checked = enabled;
+    }
+
+    // 子ノードの状態を更新
+    const updateChildren = (node: DirectoryNode, enabled: boolean) => {
+        for (const childNode of node.children.values()) {
+            childNode.enabled = enabled;
+            const childCheckbox = document.getElementById(`toggleDir${childNode.path.replace(/[\/\\]/g, '_')}`) as HTMLInputElement;
+            if (childCheckbox) {
+                childCheckbox.checked = enabled;
+            }
+            updateChildren(childNode, enabled);
+        }
+    };
+    updateChildren(node, enabled);
+
+    // 親ノードの状態を更新
+    const updateParents = (node: DirectoryNode) => {
+        let currentNode = node;
+        while (currentNode.parent) {
+            const parentNode = currentNode.parent;
+            const siblings = Array.from(parentNode.children.values());
+            const hasEnabledChild = siblings.some(sibling => sibling.enabled);
+            
+            parentNode.enabled = hasEnabledChild;
+            const parentCheckbox = document.getElementById(`toggleDir${parentNode.path.replace(/[\/\\]/g, '_')}`) as HTMLInputElement;
+            if (parentCheckbox) {
+                parentCheckbox.checked = hasEnabledChild;
+            }
+            
+            currentNode = parentNode;
+        }
+    };
+    updateParents(node);
+
+    // VSCodeに状態変更を通知
+    handleDirectoryToggle(node.path, enabled);
+}
+
 function handleDirectoryToggle(directory: string, checked: boolean) {
+    // VSCodeにメッセージを送信
     vscode.postMessage({
         command: 'toggleDirectory',
         directory: directory,
         checked: checked
     });
-} 
+
+    // configのディレクトリ状態を更新
+    if (config && config.directories) {
+        const targetDir = config.directories.find(dir => dir.path === directory);
+        if (targetDir) {
+            targetDir.enabled = checked;
+        }
+    }
+
+    // ノードの表示/非表示を更新
+    updateNodeVisibility();
+}
+
+// ノードとリンクの表示/非表示を更新する関数
+function updateNodeVisibility() {
+    const nodes = d3.selectAll('.node');
+    nodes.each(function(d: any) {
+        const dirPath = d.dirPath || '';
+        const shouldShow = isDirectoryEnabled(dirPath);
+        d3.select(this).classed('hidden', !shouldShow);
+    });
+
+    // リンクの表示/非表示を更新
+    const links = d3.selectAll('.link');
+    links.each(function(d: any) {
+        const sourceDir = (d.source as any).dirPath || '';
+        const targetDir = (d.target as any).dirPath || '';
+        const shouldShow = isDirectoryEnabled(sourceDir) && isDirectoryEnabled(targetDir);
+        d3.select(this).classed('hidden', !shouldShow);
+    });
+}
+
+// ディレクトリが有効かどうかを判定する関数
+function isDirectoryEnabled(dirPath: string): boolean {
+    if (!dirPath) return true;
+    
+    // configからディレクトリツリーを構築
+    const directoryTree = buildDirectoryTree(config.directories);
+    
+    // パスを分解して各階層をチェック
+    const parts = dirPath.split(/[\/\\]/);
+    let currentPath = '';
+    let currentLevel = directoryTree;
+    let lastMatchedNode: DirectoryNode | undefined;
+    
+    for (const part of parts) {
+        currentPath = currentPath ? `${currentPath}/${part}` : part;
+        
+        // 現在のレベルのノードをチェック
+        const exactMatch = Array.from(currentLevel.values()).find(n => n.path === currentPath);
+        if (exactMatch) {
+            lastMatchedNode = exactMatch;
+            currentLevel = exactMatch.children;
+        } else {
+            // 完全一致がない場合、最後にマッチしたノードの状態を使用
+            return lastMatchedNode ? lastMatchedNode.enabled : true;
+        }
+    }
+    
+    // 完全一致した場合はそのノードの状態を返す
+    return lastMatchedNode ? lastMatchedNode.enabled : true;
+}
+
+// メインの初期化関数
+window.addEventListener('load', () => {
+    try {
+        const graphDataElement = document.getElementById('graphData');
+        if (!graphDataElement) {
+            throw new Error('Graph data element not found');
+        }
+        
+        const parsedData = JSON.parse(graphDataElement.textContent || '{}');
+        graphData = parsedData as GraphData;
+        config = parsedData.config as GraphConfig;
+
+        // 実際のノードから拡張子を収集
+        const existingExtensions = new Set<string>();
+        graphData.nodes.forEach(node => {
+            const ext = node.fullPath.match(/\.[^.]+$/)?.[0];
+            if (ext) {
+                existingExtensions.add(ext.toLowerCase());
+            }
+        });
+
+        // 設定された拡張子のうち、実際に存在するもののみを保持
+        initialExtensions = config.targetExtensions.filter(
+            ({ extension }) => existingExtensions.has(extension.toLowerCase())
+        );
+        
+        if (!graphData || !graphData.nodes || !graphData.links) {
+            throw new Error('Invalid graph data format');
+        }
+        
+        console.log('Parsed config:', config);
+        
+        width = window.innerWidth;
+        height = window.innerHeight;
+        toggleForceButton = document.getElementById('toggleForce') as HTMLButtonElement;
+        if (!toggleForceButton) {
+            throw new Error('Toggle force button not found');
+        }
+        
+        // 色を初期化
+        initializeDirectoryColors();
+        
+        // フィルターUIを生成（グラフの初期化前に行う）
+        createFilterControls();
+        
+        console.log('Initializing graph with data:', graphData);
+        initializeGraph(graphData);
+        
+        // イベントリスナーの設定
+        window.addEventListener('resize', handleResize);
+        toggleForceButton.addEventListener('click', handleToggleForce);
+        
+    } catch (error) {
+        console.error('Failed to initialize graph:', error);
+    }
+}); 

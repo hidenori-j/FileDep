@@ -192,12 +192,10 @@ svg {
     letter-spacing: 0.5px;
 }
 .node.hidden {
-    opacity: 0;
-    pointer-events: none;
+    display: none;
 }
 .link.hidden {
-    opacity: 0;
-    pointer-events: none;
+    display: none;
 }
 .filter-section-content {
     max-height: 240px;
@@ -256,4 +254,42 @@ svg {
 }
 .control-checkbox:hover .extension-shape {
     transform: scale(1.1);
+}
+.directory-tree {
+    margin-top: 8px;
+}
+.directory-item {
+    margin: 4px 0;
+    transition: all 0.2s ease;
+}
+.directory-children {
+    transition: all 0.3s ease;
+    overflow: hidden;
+}
+.directory-children.hidden {
+    height: 0;
+    opacity: 0;
+}
+.directory-toggle {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    line-height: 20px;
+    text-align: center;
+    cursor: pointer;
+    user-select: none;
+    color: var(--vscode-editor-foreground);
+    opacity: 0.7;
+    transition: all 0.2s ease;
+}
+.directory-toggle:hover {
+    opacity: 1;
+    transform: scale(1.1);
+}
+.directory-item .control-checkbox {
+    padding-left: 4px;
+}
+.directory-item:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
 } 
