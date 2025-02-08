@@ -132,24 +132,36 @@ function getDirectoryColor(dirPath: string): string {
     // configのディレクトリリストを取得
     const configDirs = config?.directories?.map(d => d.path) || [];
     
-    // 最も近い親ディレクトリの色を見つける
-    let currentPath = dirPath;
-    while (currentPath) {
-        // 現在のパスがconfigDirsに含まれているか確認
-        if (configDirs.includes(currentPath)) {
-            if (!directoryColors.has(currentPath)) {
-                // 新しい色を生成
-                const hue = Math.abs(hashString(currentPath)) % 360;
-                const newColor = `hsl(${hue}, 70%, 50%)`;
-                directoryColors.set(currentPath, newColor);
-            }
-            return directoryColors.get(currentPath)!;
+    // 最も具体的な（最も深い階層の）ディレクトリを見つける
+    let bestMatchDir = '';
+    let bestMatchDepth = -1;
+
+    for (const configDir of configDirs) {
+        // 完全一致の場合
+        if (configDir === dirPath) {
+            bestMatchDir = configDir;
+            break;
         }
-        
-        // 親ディレクトリに移動
-        const parentPath = currentPath.split(/[\/\\]/).slice(0, -1).join('/');
-        if (parentPath === currentPath) break;
-        currentPath = parentPath;
+
+        // dirPathがconfigDirで始まる場合（サブディレクトリの場合）
+        if (dirPath.startsWith(configDir + '/') || dirPath.startsWith(configDir + '\\')) {
+            const depth = configDir.split(/[\/\\]/).length;
+            if (depth > bestMatchDepth) {
+                bestMatchDepth = depth;
+                bestMatchDir = configDir;
+            }
+        }
+    }
+
+    // マッチするディレクトリが見つかった場合
+    if (bestMatchDir) {
+        if (!directoryColors.has(bestMatchDir)) {
+            // 新しい色を生成
+            const hue = Math.abs(hashString(bestMatchDir)) % 360;
+            const newColor = `hsl(${hue}, 70%, 50%)`;
+            directoryColors.set(bestMatchDir, newColor);
+        }
+        return directoryColors.get(bestMatchDir)!;
     }
 
     // フィルターに含まれるディレクトリが見つからない場合はデフォルトの色を返す
