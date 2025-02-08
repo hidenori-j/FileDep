@@ -10,7 +10,6 @@ body {
     overflow: hidden;
 }
 .node circle {
-    fill: #4CAF50;
     stroke: #fff;
     stroke-width: 2px;
 }
@@ -61,17 +60,14 @@ svg {
     font-size: 20px;
 }
 .node.css-file path {
-    fill: #4CAF50;
     stroke: #fff;
     stroke-width: 2px;
 }
 .node.css-file .node-shape {
-    fill: #FF69B4;
     stroke: #fff;
     stroke-width: 2px;
 }
 .node.default-file .node-shape {
-    fill: #4CAF50;
     stroke: #fff;
     stroke-width: 2px;
 }

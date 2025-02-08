@@ -78,63 +78,69 @@ function getDirectoryColor(dirPath: string): string {
     // configのディレクトリリストを取得
     const configDirs = config?.directories?.map(d => d.path) || [];
     
-    // 最も具体的な（最も深い階層の）ディレクトリを見つける
-    let bestMatchDir = '';
-    let bestMatchDepth = -1;
+    // パスの各部分を分解
+    const parts = dirPath.split(/[\/\\]/);
+    let currentPath = '';
+    let parentColor = '';
 
-    for (const configDir of configDirs) {
-        // 完全一致の場合
-        if (configDir === dirPath) {
-            bestMatchDir = configDir;
-            break;
+    // 親ディレクトリを順に検索
+    for (let i = 0; i < parts.length; i++) {
+        currentPath = currentPath ? `${currentPath}/${parts[i]}` : parts[i];
+        
+        // 現在のパスの色が既にある場合はそれを使用
+        if (directoryColors.has(currentPath)) {
+            parentColor = directoryColors.get(currentPath)!;
+            continue;
         }
 
-        // dirPathがconfigDirで始まる場合（サブディレクトリの場合）
-        if (dirPath.startsWith(configDir + '/') || dirPath.startsWith(configDir + '\\')) {
-            const depth = configDir.split(/[\/\\]/).length;
-            if (depth > bestMatchDepth) {
-                bestMatchDepth = depth;
-                bestMatchDir = configDir;
-            }
+        // configDirsに含まれているか確認
+        if (configDirs.includes(currentPath)) {
+            // 親の色があればそれを使用、なければ新しい色を生成
+            const color = parentColor || `hsl(${Math.abs(hashString(currentPath)) % 360}, 70%, 50%)`;
+            directoryColors.set(currentPath, color);
+            parentColor = color;
         }
     }
 
-    // マッチするディレクトリが見つかった場合、その色を使用または生成
-    if (bestMatchDir) {
-        // 親ディレクトリの色を探す
-        if (directoryColors.has(bestMatchDir)) {
-            const color = directoryColors.get(bestMatchDir)!;
-            directoryColors.set(dirPath, color); // 子ディレクトリにも同じ色を設定
-            return color;
-        }
-
-        // 新しい色を生成
-        const hue = Math.abs(hashString(bestMatchDir)) % 360;
-        const color = `hsl(${hue}, 70%, 50%)`;
-        directoryColors.set(bestMatchDir, color);
-        directoryColors.set(dirPath, color); // 子ディレクトリにも同じ色を設定
-        return color;
-    }
-
-    // フィルターに含まれるディレクトリが見つからない場合はデフォルトの色を返す
-    return 'hsl(0, 0%, 70%)';  // グレー
+    // 最終的な色を設定（親の色があればそれを使用、なければグレー）
+    const finalColor = parentColor || 'hsl(0, 0%, 70%)';
+    directoryColors.set(dirPath, finalColor);
+    return finalColor;
 }
 
 // 初期化時にディレクトリの色を生成
 function initializeDirectoryColors() {
-    directoryColors.clear();
     if (config && config.directories) {
-        // ディレクトリを階層の浅い順にソート
-        const sortedDirs = [...config.directories].sort((a, b) => {
-            const depthA = a.path.split(/[\/\\]/).length;
-            const depthB = b.path.split(/[\/\\]/).length;
-            return depthA - depthB;
+        // 全てのユニークなディレクトリパスを収集（親ディレクトリも含む）
+        const allPaths = new Set<string>();
+        config.directories.forEach(dir => {
+            const parts = dir.path.split(/[\/\\]/);
+            let currentPath = '';
+            parts.forEach(part => {
+                currentPath = currentPath ? `${currentPath}/${part}` : part;
+                allPaths.add(currentPath);
+            });
         });
 
-        // 階層順に色を割り当て
-        for (const dir of sortedDirs) {
-            getDirectoryColor(dir.path); // この呼び出しで色が生成・キャッシュされる
-        }
+        // パスを配列に変換してソート（階層の浅い順）
+        const sortedPaths = Array.from(allPaths).sort((a, b) => {
+            const depthA = a.split(/[\/\\]/).length;
+            const depthB = b.split(/[\/\\]/).length;
+            if (depthA !== depthB) {
+                return depthA - depthB;
+            }
+            return a.localeCompare(b);
+        });
+
+        // 色相の間隔を計算（360度を全パス数で割る）
+        const hueStep = 360 / sortedPaths.length;
+
+        // 各パスに色を割り当て
+        sortedPaths.forEach((path, index) => {
+            const hue = (index * hueStep) % 360;
+            const color = `hsl(${hue}, 70%, 50%)`;
+            directoryColors.set(path, color);
+        });
     }
 }
 
@@ -311,8 +317,9 @@ function initializeGraph(data: GraphData): void {
                 const size = (8 + Math.sqrt(d.connections || 1) * 6) * 0.75;
                 const shapeType = (window as any).shapes.getShapeType(d.fullPath);
                 (window as any).shapes.shapeDefinitions[shapeType].createNodeShape(element, size);
-                // ディレクトリに基づいて色を設定
-                const dirColor = getDirectoryColor(d.dirPath || '');
+                // ディレクトリの色を取得（既に初期化されている色を使用）
+                const dirPath = d.dirPath || '';
+                const dirColor = directoryColors.get(dirPath) || 'hsl(0, 0%, 70%)';  // 色がない場合はグレー
                 element.select('.node-shape')
                     .style('fill', dirColor)
                     .style('stroke', '#fff')
@@ -519,15 +526,17 @@ window.addEventListener('message', event => {
                     links: message.data.links
                 };
 
-                // 色を再初期化
+                // 先にディレクトリの色を初期化
                 initializeDirectoryColors();
 
-                // UIを再描画
+                // フィルターUIを再生成（グラフの初期化前に行う）
+                createFilterControls();
+
+                // UIを再描画（ディレクトリの色が決定された後）
                 const graphDiv = document.getElementById('graph');
                 if (graphDiv) {
                     graphDiv.innerHTML = '';
                     initializeGraph(graphData);
-                    createFilterControls();
                 }
             }
             break;
@@ -762,7 +771,7 @@ function renderDirectoryTree(tree: Map<string, DirectoryNode>, container: HTMLEl
         // カラーパレットを追加
         const colorPalette = document.createElement('span');
         colorPalette.className = 'color-palette';
-        colorPalette.style.backgroundColor = getDirectoryColor(node.path);
+        colorPalette.style.backgroundColor = directoryColors.get(node.path) || 'hsl(0, 0%, 70%)';  // 色がない場合はグレー
 
         // 展開/折りたたみアイコンを追加（子ノードがある場合のみ）
         if (node.children.size > 0) {
@@ -955,19 +964,19 @@ window.addEventListener('load', () => {
             throw new Error('Toggle force button not found');
         }
         
-        // 色を初期化
+        // 先にディレクトリの色を初期化
         initializeDirectoryColors();
         
         // フィルターUIを生成（グラフの初期化前に行う）
         createFilterControls();
         
+        // グラフを初期化（ディレクトリの色が決定された後）
         console.log('Initializing graph with data:', graphData);
         initializeGraph(graphData);
         
         // イベントリスナーの設定
         window.addEventListener('resize', handleResize);
         toggleForceButton.addEventListener('click', handleToggleForce);
-        
     } catch (error) {
         console.error('Failed to initialize graph:', error);
     }
