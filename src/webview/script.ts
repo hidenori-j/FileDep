@@ -1,8 +1,8 @@
-// グローバル変数の前に追加
+// VSCode APIの型定義
 declare function acquireVsCodeApi(): any;
 const vscode = acquireVsCodeApi();
 
-// イベントハンドラーの型定義を追加
+// D3.jsの型定義
 interface D3EventBase<GElement extends d3.BaseType, Datum> {
     type: string;
     target: EventTarget;
@@ -13,15 +13,7 @@ interface D3EventBase<GElement extends d3.BaseType, Datum> {
     stopPropagation(): void;
 }
 
-// グローバル変数
-let simulation: d3.Simulation<GraphNode, GraphLink> | null = null;
-let isForceEnabled = false;
-let width: number;
-let height: number;
-let graphData: GraphData;
-let toggleForceButton: HTMLButtonElement;
-let svg: d3.Selection<SVGGElement, unknown, HTMLElement, any>;
-
+// グラフノードの型定義
 interface GraphNode {
     id: string | number;
     name: string;
@@ -34,28 +26,39 @@ interface GraphNode {
     fy?: number | null;
 }
 
+// グラフリンクの型定義
 interface GraphLink {
     source: string | number;
     target: string | number;
 }
 
+// グラフデータの型定義
 interface GraphData {
     nodes: GraphNode[];
     links: GraphLink[];
 }
 
+// 拡張子設定の型定義
 interface ExtensionConfig {
     extension: string;
     enabled: boolean;
 }
 
+// グラフ設定の型定義
 interface GraphConfig {
     targetExtensions: ExtensionConfig[];
     directories: { path: string; enabled: boolean }[];
 }
 
-// グローバル変数に追加
+// グローバル変数
+let simulation: d3.Simulation<GraphNode, GraphLink> | null = null;
+let isForceEnabled = false;
+let width: number;
+let height: number;
+let graphData: GraphData;
 let config: GraphConfig;
+let toggleForceButton: HTMLButtonElement;
+let svg: d3.Selection<SVGGElement, unknown, HTMLElement, any>;
 
 // メインの初期化関数
 window.addEventListener('load', () => {
@@ -308,27 +311,10 @@ function initializeGraph(data: GraphData): void {
         node.each(function(d) {
             const element = d3.select(this);
             try {
-                if (isCssFile(d)) {
-                    const size = (8 + Math.sqrt(d.connections || 1) * 6) * 0.75;
-                    element.append('path')
-                        .attr('d', `M0,${size} L${size},${-size} L${-size},${-size} Z`)
-                        .attr('class', 'node-shape')
-                        .style('fill', () => getDirectoryColor(d.dirPath || ''));
-                } else if (isJsFile(d)) {
-                    const size = (8 + Math.sqrt(d.connections || 1) * 6) * 0.75;
-                    element.append('rect')
-                        .attr('x', -size)
-                        .attr('y', -size)
-                        .attr('width', size * 2)
-                        .attr('height', size * 2)
-                        .attr('class', 'node-shape')
-                        .style('fill', () => getDirectoryColor(d.dirPath || ''));
-                } else {
-                    element.append('circle')
-                        .attr('r', 5 + Math.sqrt(d.connections || 1) * 4)
-                        .attr('class', 'node-shape')
-                        .style('fill', () => getDirectoryColor(d.dirPath || ''));
-                }
+                const size = (8 + Math.sqrt(d.connections || 1) * 6) * 0.75;
+                const shapeType = (window as any).shapes.getShapeType(d.fullPath);
+                (window as any).shapes.shapeDefinitions[shapeType].createNodeShape(element, size);
+                element.select('.node-shape').style('fill', () => getDirectoryColor(d.dirPath || ''));
             } catch (error) {
                 console.error('ノード形状の作成エラー:', error);
             }
@@ -595,9 +581,20 @@ function getNodeClass(node: GraphNode): string {
     return 'default-file';
 }
 
+// 拡張子の形状クラスを取得する関数を追加
+function getExtensionShapeClass(extension: string): string {
+    if (extension.match(/\.(js|ts)$/)) return 'js';
+    if (extension.match(/\.(jsx|tsx)$/)) return 'jsx';
+    if (extension.match(/\.css$/)) return 'css';
+    return 'default';
+}
+
 // フィルターUIを生成する関数を更新
 function createFilterControls() {
     console.log('Creating filter controls with config:', config);
+    
+    // 形状スタイルを更新
+    (window as any).shapes.updateFilterShapeStyles();
     
     const controls = document.querySelector('.controls');
     if (!controls) {
@@ -634,7 +631,12 @@ function createFilterControls() {
                 handleExtensionToggle(extension, checkbox.checked);
             });
 
+            // 形状サンプルを追加
+            const shapeIndicator = document.createElement('span');
+            shapeIndicator.className = `extension-shape ${(window as any).shapes.getShapeType(extension)}`;
+
             label.appendChild(checkbox);
+            label.appendChild(shapeIndicator);
             label.appendChild(document.createTextNode(extension));
             extensionsContainer.appendChild(label);
         });

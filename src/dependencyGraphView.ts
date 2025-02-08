@@ -149,6 +149,9 @@ export class DependencyGraphView {
         const scriptUri = webview.asWebviewUri(
             vscode.Uri.joinPath(this.extensionUri, 'out', 'webview', 'script.js')
         );
+        const shapesUri = webview.asWebviewUri(
+            vscode.Uri.joinPath(this.extensionUri, 'out', 'webview', 'shapes.js')
+        );
         const styleUri = webview.asWebviewUri(
             vscode.Uri.joinPath(this.extensionUri, 'src', 'webview', 'style.css')
         );
@@ -195,6 +198,7 @@ export class DependencyGraphView {
                         <span class="icon">🔗</span>
                     </button>
                 </div>
+                <script src="${shapesUri}"></script>
                 <script src="${scriptUri}"></script>
             </body>
             </html>`;

@@ -29,6 +29,32 @@
         "configuration": {
             "title": "FileDep",
             "properties": {
+                "filedep.visibleDirectories": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "default": [
+                        "src",
+                        "src/utils",
+                        "src/webview",
+                        "src/components",
+                        "src/services",
+                        "src/models",
+                        "src/types",
+                        "src/hooks",
+                        "src/assets",
+                        "src/styles",
+                        "src/lib",
+                        "test",
+                        "tests",
+                        "lib",
+                        "libs",
+                        "config",
+                        "scripts"
+                    ],
+                    "description": "依存関係グラフのディレクトリフィルターに表示するディレクトリのリスト"
+                },
                 "filedep.ignoredExtensions": {
                     "type": "array",
                     "items": {
@@ -79,32 +105,6 @@
                         "assets/images", "assets/fonts", "assets/media"
                     ],
                     "description": "解析から除外するディレクトリのリスト（例: [\"node_modules\", \"dist\"]）"
-                },
-                "filedep.visibleDirectories": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "default": [
-                        "src",
-                        "src/utils",
-                        "src/webview",
-                        "src/components",
-                        "src/services",
-                        "src/models",
-                        "src/types",
-                        "src/hooks",
-                        "src/assets",
-                        "src/styles",
-                        "src/lib",
-                        "test",
-                        "tests",
-                        "lib",
-                        "libs",
-                        "config",
-                        "scripts"
-                    ],
-                    "description": "依存関係グラフのディレクトリフィルターに表示するディレクトリのリスト"
                 },
                 "filedep.checkBinaryFiles": {
                     "type": "boolean",

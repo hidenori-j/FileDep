@@ -203,4 +203,12 @@ svg {
     margin: 0 8px;
     border: 1px solid var(--vscode-editor-foreground);
     vertical-align: middle;
+}
+.extension-shape {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    margin: 0 8px;
+    vertical-align: middle;
+    position: relative;
 } 
