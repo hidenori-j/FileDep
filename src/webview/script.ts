@@ -317,9 +317,21 @@ function initializeGraph(data: GraphData): void {
                 const size = (8 + Math.sqrt(d.connections || 1) * 6) * 0.75;
                 const shapeType = (window as any).shapes.getShapeType(d.fullPath);
                 (window as any).shapes.shapeDefinitions[shapeType].createNodeShape(element, size);
-                // ディレクトリの色を取得（既に初期化されている色を使用）
+                
+                // ディレクトリの色を取得
                 const dirPath = d.dirPath || '';
-                const dirColor = directoryColors.get(dirPath) || 'hsl(0, 0%, 70%)';  // 色がない場合はグレー
+                let dirColor = 'hsl(0, 0%, 70%)';  // デフォルトはグレー
+
+                // dirPathの各階層をチェックして、最も具体的な色を見つける
+                const parts = dirPath.split(/[\/\\]/);
+                let currentPath = '';
+                for (let i = 0; i < parts.length; i++) {
+                    currentPath = currentPath ? `${currentPath}/${parts[i]}` : parts[i];
+                    if (directoryColors.has(currentPath)) {
+                        dirColor = directoryColors.get(currentPath)!;
+                    }
+                }
+
                 element.select('.node-shape')
                     .style('fill', dirColor)
                     .style('stroke', '#fff')
