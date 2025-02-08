@@ -44,6 +44,9 @@ export class DependencyGraphView {
                 case 'toggleDirectory':
                     await this.handleDirectoryToggle(message.directory, message.checked);
                     break;
+                case 'selectFile':
+                    await this.handleFileSelect(message.filePath);
+                    break;
             }
         };
     }
@@ -220,6 +223,54 @@ export class DependencyGraphView {
     private async handleDirectoryToggle(directory: string, checked: boolean) {
         await this.provider.setDirectoryEnabled(directory, checked);
         await this.updateGraph();
+    }
+
+    private async handleFileSelect(filePath: string) {
+        try {
+            if (!filePath) {
+                const errorMessage = 'ファイルパスが指定されていません';
+                console.error(errorMessage);
+                this.panel?.webview.postMessage({
+                    command: 'error',
+                    message: errorMessage
+                });
+                return;
+            }
+
+            const uri = vscode.Uri.file(filePath);
+            
+            // ファイルが存在するか確認
+            try {
+                await vscode.workspace.fs.stat(uri);
+            } catch (error) {
+                const errorMessage = `ファイルが見つかりません: ${filePath}`;
+                console.error(errorMessage);
+                this.panel?.webview.postMessage({
+                    command: 'error',
+                    message: errorMessage
+                });
+                return;
+            }
+
+            // エクスプローラーでファイルを選択（フォーカスは移動しない）
+            await vscode.commands.executeCommand('revealInExplorer', uri);
+
+            // ファイルを開く（フォーカスは維持）
+            const document = await vscode.workspace.openTextDocument(uri);
+            await vscode.window.showTextDocument(document, {
+                preserveFocus: true,  // フォーカスを維持
+                preview: true,        // プレビューモードで開く
+                viewColumn: vscode.ViewColumn.Beside  // 現在のビューの横に表示
+            });
+
+        } catch (error) {
+            const errorMessage = `ファイルの選択中にエラーが発生しました: ${error}`;
+            console.error(errorMessage);
+            this.panel?.webview.postMessage({
+                command: 'error',
+                message: errorMessage
+            });
+        }
     }
 
     public async setTargetExtensions(extensions: string[]) {

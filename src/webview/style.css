@@ -185,4 +185,13 @@ svg {
 }
 .filter-section-content::-webkit-scrollbar-thumb:hover {
     background: var(--vscode-scrollbarSlider-hoverBackground);
+}
+.node.selected .node-shape {
+    stroke: var(--vscode-focusBorder);
+    stroke-width: 3px;
+    filter: brightness(1.2);
+}
+.node.selected text {
+    font-weight: bold;
+    fill: var(--vscode-editor-foreground);
 } 

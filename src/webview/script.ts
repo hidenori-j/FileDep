@@ -2,6 +2,19 @@
 declare function acquireVsCodeApi(): any;
 const vscode = acquireVsCodeApi();
 
+// イベントハンドラーの型定義を追加
+interface D3EventBase<GElement extends d3.BaseType, Datum> extends d3.D3Event<GElement, Datum> {
+    type: string;
+    target: EventTarget;
+    currentTarget: EventTarget;
+    pageX: number;
+    pageY: number;
+    preventDefault(): void;
+    stopPropagation(): void;
+}
+
+interface NodeClickEvent extends D3EventBase<SVGGElement, GraphNode> {}
+
 // グローバル変数
 let simulation: d3.Simulation<GraphNode, GraphLink> | null = null;
 let isForceEnabled = false;
@@ -100,139 +113,241 @@ function getDirectoryColor(dirPath: string): string {
 }
 
 function initializeGraph(data: GraphData): void {
-    console.log('InitializeGraph called with data:', data);
-    const graphDiv = document.getElementById('graph');
-    if (!graphDiv) return;
+    try {
+        console.log('InitializeGraph called with data:', data);
+        const graphDiv = document.getElementById('graph');
+        if (!graphDiv) {
+            console.error('グラフコンテナが見つかりません');
+            return;
+        }
 
-    // グラフコンテナをクリア
-    graphDiv.innerHTML = '';
+        // グラフコンテナをクリア
+        graphDiv.innerHTML = '';
 
-    // 新しいSVGを作成
-    svg = d3.select('#graph')
-        .append('svg')
-        .attr('width', width)
-        .attr('height', height)
-        .append('g');
+        // 新しいSVGを作成
+        const svgContainer = d3.select('#graph')
+            .append('svg')
+            .attr('width', width)
+            .attr('height', height);
 
-    const tooltip = d3.select('.tooltip');
+        svg = svgContainer.append('g');
 
-    // ズーム設定
-    const zoom = d3.zoom<SVGSVGElement, unknown>();
-    d3.select<SVGSVGElement, unknown>('#graph svg')
-        .call(zoom
+        const tooltip = d3.select('.tooltip');
+
+        // ズーム設定
+        const zoom = d3.zoom<SVGSVGElement, unknown>()
             .scaleExtent([0.1, 4])
             .filter((event: any) => event.shiftKey || event.type === 'wheel')
             .on('zoom', (event) => {
                 svg.attr('transform', event.transform.toString());
+            });
+
+        svgContainer.call(zoom);
+
+        // シミュレーションの設定
+        simulation = d3.forceSimulation<GraphNode>(data.nodes)
+            .force('link', d3.forceLink<GraphNode, GraphLink>(data.links).id(d => d.id).distance(100))
+            .force('charge', d3.forceManyBody().strength(-300))
+            .force('center', d3.forceCenter(width / 2, height / 2))
+            .force('collision', d3.forceCollide().radius(30));
+
+        // リンクの作成
+        const linkGroup = svg.append('g').attr('class', 'links');
+        const link = linkGroup
+            .selectAll('line')
+            .data(data.links)
+            .join('line')
+            .attr('class', 'link');
+
+        // ノードの作成
+        const nodeGroup = svg.append('g').attr('class', 'nodes');
+        const node = nodeGroup
+            .selectAll('g')
+            .data(data.nodes)
+            .join('g')
+            .attr('class', d => `node ${getNodeClass(d)}`);
+
+        // ドラッグ動作の設定
+        const drag = d3.drag<SVGGElement, GraphNode>()
+            .on('start', (event, d) => {
+                if (!event.active && simulation) simulation.alphaTarget(0.3).restart();
+                d.fx = d.x;
+                d.fy = d.y;
             })
-        );
+            .on('drag', (event, d) => {
+                d.fx = event.x;
+                d.fy = event.y;
+            })
+            .on('end', (event, d) => {
+                if (!event.active && simulation) simulation.alphaTarget(0);
+                d.fx = null;
+                d.fy = null;
+            });
 
-    // シミュレーションの設定と開始（先に設定）
-    simulation = d3.forceSimulation<GraphNode>(data.nodes)
-        .force('link', d3.forceLink<GraphNode, GraphLink>(data.links)
-            .id(d => d.id)
-            .distance(d => {
-                const source = data.nodes.find(n => n.id === d.source);
-                const target = data.nodes.find(n => n.id === d.target);
-                if (!source || !target) return 100;
+        node.call(drag);
 
-                // 親子関係の判定（ディレクトリパスを比較）
-                const isParentChild = source.dirPath === target.dirPath || 
-                    source.dirPath.startsWith(target.dirPath + '/') || 
-                    target.dirPath.startsWith(source.dirPath + '/');
+        // クリックイベントの設定
+        node.on('click', function(event: Event) {
+            try {
+                // イベントとthisの型安全性を確保
+                if (!(event instanceof MouseEvent)) {
+                    console.error('無効なイベントタイプです');
+                    return;
+                }
 
-                return isParentChild ? 50 : 150;
-            }))
-        .force('charge', d3.forceManyBody().strength(-300))
-        .force('center', d3.forceCenter(width / 2, height / 2))
-        .force('collision', d3.forceCollide().radius(30));
+                if (!(this instanceof SVGGElement)) {
+                    console.error('無効なターゲット要素です');
+                    return;
+                }
 
-    // リンクとノードの作成
-    const link = svg.append('g')
-        .selectAll('line')
-        .data(data.links)
-        .enter()
-        .append('line')
-        .attr('class', 'link');
+                // イベントの伝播を停止
+                event.preventDefault();
+                event.stopPropagation();
 
-    const node = svg.append('g')
-        .selectAll('g')
-        .data(data.nodes)
-        .enter()
-        .append('g')
-        .attr('class', d => `node ${getNodeClass(d)}`)
-        .call(d3.drag<SVGGElement, GraphNode>()
-            .on('start', dragstarted)
-            .on('drag', dragged)
-            .on('end', dragended));
+                // データの取得と検証
+                const element = d3.select(this);
+                const data = element.datum() as GraphNode;
 
-    // ノードの形状を設定
-    node.each(function(this: SVGGElement, d: GraphNode) {
-        const element = d3.select<SVGGElement, GraphNode>(this);
-        if (isCssFile(d)) {
-            const size = (8 + Math.sqrt(d.connections) * 6) * 0.75;
-            element.append('path')
-                .attr('d', `M0,${size} L${size},${-size} L${-size},${-size} Z`)
-                .attr('class', 'node-shape')
-                .style('fill', () => getDirectoryColor(d.dirPath));
-        } else if (isJsFile(d)) {
-            const size = (8 + Math.sqrt(d.connections) * 6) * 0.75;
-            element.append('rect')
-                .attr('x', -size)
-                .attr('y', -size)
-                .attr('width', size * 2)
-                .attr('height', size * 2)
-                .attr('class', 'node-shape')
-                .style('fill', () => getDirectoryColor(d.dirPath));
-        } else {
-            element.append('circle')
-                .attr('r', d => 5 + Math.sqrt(d.connections) * 4)
-                .attr('class', 'node-shape')
-                .style('fill', () => getDirectoryColor(d.dirPath));
-        }
-    });
+                if (!data) {
+                    console.error('ノードデータが見つかりません');
+                    return;
+                }
 
-    // ノードのラベルを追加
-    node.append('text')
-        .attr('dx', 12)
-        .attr('dy', '.35em')
-        .text(d => d.name);
+                if (!data.fullPath) {
+                    console.error('ファイルパスが見つかりません:', data);
+                    return;
+                }
 
-    // tickイベントの設定を最後に行う
-    simulation.on('tick', () => {
-        link
-            .attr('x1', d => ((d.source as unknown) as GraphNode).x || 0)
-            .attr('y1', d => ((d.source as unknown) as GraphNode).y || 0)
-            .attr('x2', d => ((d.target as unknown) as GraphNode).x || 0)
-            .attr('y2', d => ((d.target as unknown) as GraphNode).y || 0);
+                // 選択状態を更新
+                try {
+                    const allNodes = d3.selectAll('.node');
+                    if (allNodes.empty()) {
+                        console.error('ノード要素が見つかりません');
+                        return;
+                    }
 
-        node.attr('transform', d => `translate(${d.x || 0},${d.y || 0})`);
-    });
+                    allNodes.classed('selected', false);
+                    element.classed('selected', true);
+                } catch (selectError) {
+                    console.error('選択状態の更新に失敗:', selectError);
+                }
 
-    // シミュレーションを開始
-    simulation.alpha(1).restart();
+                // VSCodeにメッセージを送信
+                try {
+                    if (typeof vscode === 'undefined') {
+                        throw new Error('VSCode APIが利用できません');
+                    }
 
-    // イベントハンドラーの設定
-    node.on('dblclick', (event, d) => {
-        vscode.postMessage({
-            command: 'openFile',
-            filePath: d.fullPath
+                    vscode.postMessage({
+                        command: 'selectFile',
+                        filePath: data.fullPath
+                    });
+                } catch (messageError) {
+                    console.error('メッセージの送信に失敗:', messageError);
+                    // エラーメッセージをVSCodeに送信
+                    try {
+                        vscode.postMessage({
+                            command: 'error',
+                            message: `ファイルの選択中にエラーが発生しました: ${messageError}`
+                        });
+                    } catch (notifyError) {
+                        console.error('エラー通知の送信に失敗:', notifyError);
+                    }
+                }
+            } catch (error) {
+                console.error('クリックイベントの処理に失敗:', error);
+                try {
+                    vscode.postMessage({
+                        command: 'error',
+                        message: `予期せぬエラーが発生しました: ${error}`
+                    });
+                } catch (notifyError) {
+                    console.error('エラー通知の送信に失敗:', notifyError);
+                }
+            }
         });
-    });
 
-    node.on('mouseover', (event, d) => {
-        tooltip.transition()
-            .duration(200)
-            .style('opacity', .9);
-        tooltip.html(d.dirPath)
-            .style('left', (event.pageX + 10) + 'px')
-            .style('top', (event.pageY - 28) + 'px');
-    })
-    .on('mouseout', () => {
-        tooltip.transition()
-            .duration(500)
-            .style('opacity', 0);
-    });
+        // ノードの形状を設定
+        node.each(function(d) {
+            const element = d3.select(this);
+            try {
+                if (isCssFile(d)) {
+                    const size = (8 + Math.sqrt(d.connections || 1) * 6) * 0.75;
+                    element.append('path')
+                        .attr('d', `M0,${size} L${size},${-size} L${-size},${-size} Z`)
+                        .attr('class', 'node-shape')
+                        .style('fill', () => getDirectoryColor(d.dirPath || ''));
+                } else if (isJsFile(d)) {
+                    const size = (8 + Math.sqrt(d.connections || 1) * 6) * 0.75;
+                    element.append('rect')
+                        .attr('x', -size)
+                        .attr('y', -size)
+                        .attr('width', size * 2)
+                        .attr('height', size * 2)
+                        .attr('class', 'node-shape')
+                        .style('fill', () => getDirectoryColor(d.dirPath || ''));
+                } else {
+                    element.append('circle')
+                        .attr('r', 5 + Math.sqrt(d.connections || 1) * 4)
+                        .attr('class', 'node-shape')
+                        .style('fill', () => getDirectoryColor(d.dirPath || ''));
+                }
+            } catch (error) {
+                console.error('ノード形状の作成エラー:', error);
+            }
+        });
+
+        // ノードのラベルを追加
+        node.append('text')
+            .attr('dx', 12)
+            .attr('dy', '.35em')
+            .text(d => d.name || '');
+
+        // ツールチップの設定
+        node.on('mouseover', function(event: MouseEvent, d: GraphNode) {
+            tooltip.transition()
+                .duration(200)
+                .style('opacity', .9);
+            tooltip.html(d.dirPath || '')
+                .style('left', (event.pageX + 10) + 'px')
+                .style('top', (event.pageY - 28) + 'px');
+        })
+        .on('mouseout', () => {
+            tooltip.transition()
+                .duration(500)
+                .style('opacity', 0);
+        });
+
+        // tickイベントの設定
+        simulation.on('tick', () => {
+            try {
+                link
+                    .attr('x1', d => ((d.source as any).x || 0))
+                    .attr('y1', d => ((d.source as any).y || 0))
+                    .attr('x2', d => ((d.target as any).x || 0))
+                    .attr('y2', d => ((d.target as any).y || 0));
+
+                node.attr('transform', d => `translate(${d.x || 0},${d.y || 0})`);
+            } catch (error) {
+                console.error('Tickイベントエラー:', error);
+            }
+        });
+
+        // シミュレーションを開始
+        simulation.alpha(1).restart();
+
+    } catch (error) {
+        console.error('グラフの初期化エラー:', error);
+        vscode.postMessage({
+            command: 'error',
+            message: `グラフの初期化中にエラーが発生しました: ${error}`
+        });
+    }
+}
+
+// イベントハンドラーの型定義を更新
+interface NodeClickEvent extends d3.D3Event<SVGGElement, GraphNode> {
+    currentTarget: SVGGElement;
 }
 
 // イベントハンドラーの型定義
@@ -380,6 +495,25 @@ window.addEventListener('message', event => {
                     createFilterControls();  // 更新された状態でUIを再生成
                 }
             }
+            break;
+        case 'error':
+            // エラーメッセージを表示
+            const tooltip = d3.select('.tooltip');
+            tooltip.transition()
+                .duration(200)
+                .style('opacity', .9);
+            tooltip.html(message.message)
+                .style('left', '50%')
+                .style('top', '20px')
+                .style('transform', 'translateX(-50%)')
+                .style('background', 'var(--vscode-errorForeground)')
+                .style('color', 'var(--vscode-editor-background)');
+            
+            setTimeout(() => {
+                tooltip.transition()
+                    .duration(500)
+                    .style('opacity', 0);
+            }, 3000);
             break;
     }
 });
