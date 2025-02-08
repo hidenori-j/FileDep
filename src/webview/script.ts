@@ -97,17 +97,56 @@ window.addEventListener('load', () => {
     }
 });
 
-// 色生成のためのヘルパー関数を追加
+// 色生成のためのヘルパー関数を更新
+const directoryColors = new Map<string, string>();
+
 function getDirectoryColor(dirPath: string): string {
-    // ディレクトリパスをハッシュ値に変換
-    let hash = 0;
-    for (let i = 0; i < dirPath.length; i++) {
-        hash = dirPath.charCodeAt(i) + ((hash << 5) - hash);
+    // ルートディレクトリの場合
+    if (!dirPath || dirPath === '.') {
+        return 'hsl(0, 70%, 50%)';
     }
+
+    // キャッシュされた色があれば使用
+    if (directoryColors.has(dirPath)) {
+        return directoryColors.get(dirPath)!;
+    }
+
+    // configのディレクトリリストを取得
+    const configDirs = config?.directories?.map(d => d.path) || [];
     
-    // HSLカラーを生成（彩度と明度を固定して、色相のみを変化させる）
-    const hue = Math.abs(hash % 360);
-    return `hsl(${hue}, 70%, 50%)`;
+    // 最も近い親ディレクトリの色を見つける
+    let currentPath = dirPath;
+    while (currentPath) {
+        // 現在のパスがconfigDirsに含まれているか確認
+        if (configDirs.includes(currentPath)) {
+            if (!directoryColors.has(currentPath)) {
+                // 新しい色を生成
+                const hue = Math.abs(hashString(currentPath)) % 360;
+                const newColor = `hsl(${hue}, 70%, 50%)`;
+                directoryColors.set(currentPath, newColor);
+            }
+            return directoryColors.get(currentPath)!;
+        }
+        
+        // 親ディレクトリに移動
+        const parentPath = currentPath.split(/[\/\\]/).slice(0, -1).join('/');
+        if (parentPath === currentPath) break;
+        currentPath = parentPath;
+    }
+
+    // フィルターに含まれるディレクトリが見つからない場合はデフォルトの色を返す
+    return 'hsl(0, 0%, 70%)';  // グレー
+}
+
+// 文字列からハッシュ値を生成する関数
+function hashString(str: string): number {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash; // Convert to 32bit integer
+    }
+    return hash;
 }
 
 function initializeGraph(data: GraphData): void {
@@ -622,7 +661,13 @@ function createFilterControls() {
                 handleDirectoryToggle(path, checkbox.checked);
             });
 
+            // カラーパレットを追加
+            const colorPalette = document.createElement('span');
+            colorPalette.className = 'color-palette';
+            colorPalette.style.backgroundColor = getDirectoryColor(path);
+
             label.appendChild(checkbox);
+            label.appendChild(colorPalette);
             label.appendChild(document.createTextNode(path || '(root)'));
             directoriesContainer.appendChild(label);
         });
