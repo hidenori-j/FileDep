@@ -57,6 +57,7 @@ let width: number;
 let height: number;
 let graphData: GraphData;
 let config: GraphConfig;
+let initialExtensions: ExtensionConfig[] = [];  // 初期の拡張子リストを保持
 let toggleForceButton: HTMLButtonElement;
 let svg: d3.Selection<SVGGElement, unknown, HTMLElement, any>;
 
@@ -71,6 +72,20 @@ window.addEventListener('load', () => {
         const parsedData = JSON.parse(graphDataElement.textContent || '{}');
         graphData = parsedData as GraphData;
         config = parsedData.config as GraphConfig;
+
+        // 実際のノードから拡張子を収集
+        const existingExtensions = new Set<string>();
+        graphData.nodes.forEach(node => {
+            const ext = node.fullPath.match(/\.[^.]+$/)?.[0];
+            if (ext) {
+                existingExtensions.add(ext.toLowerCase());
+            }
+        });
+
+        // 設定された拡張子のうち、実際に存在するもののみを保持
+        initialExtensions = config.targetExtensions.filter(
+            ({ extension }) => existingExtensions.has(extension.toLowerCase())
+        );
         
         if (!graphData || !graphData.nodes || !graphData.links) {
             throw new Error('Invalid graph data format');
@@ -509,7 +524,17 @@ window.addEventListener('message', event => {
                         target: link.target
                     }))
                 };
-                config = message.data.config;  // 更新された設定を保存
+
+                // 新しい設定を適用
+                config = message.data.config;
+                
+                // 初期の拡張子リストの状態を更新（enabled状態のみ）
+                initialExtensions = initialExtensions.map(ext => ({
+                    ...ext,
+                    enabled: message.data.config.targetExtensions.find(
+                        (newExt: ExtensionConfig) => newExt.extension === ext.extension
+                    )?.enabled ?? false
+                }));
                 
                 // グラフを完全に再描画
                 const graphDiv = document.getElementById('graph');
@@ -613,12 +638,16 @@ function createFilterControls() {
     filterContainer.className = 'filter-container';
 
     // 拡張子フィルター
-    if (config && config.targetExtensions) {
+    if (initialExtensions.length > 0) {
         const extensionsContainer = document.createElement('div');
         extensionsContainer.className = 'filter-section';
         extensionsContainer.innerHTML = '<h3>拡張子フィルター</h3>';
 
-        config.targetExtensions.forEach(({ extension, enabled }) => {
+        // 初期の拡張子リストを使用し、現在の有効/無効状態を適用
+        initialExtensions.forEach(({ extension }) => {
+            const currentState = config.targetExtensions.find(e => e.extension === extension);
+            const enabled = currentState ? currentState.enabled : false;
+
             const label = document.createElement('label');
             label.className = 'control-checkbox';
             
