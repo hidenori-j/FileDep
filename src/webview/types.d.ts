@@ -4,6 +4,7 @@ interface GraphNode {
     fullPath: string;
     dirPath: string;
     connections: number;
+    description?: string;
     x?: number;
     y?: number;
     fx?: number | null;

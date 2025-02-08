@@ -8,6 +8,7 @@ interface GraphNode {
     name: string;
     fullPath: string;
     dirPath: string;
+    description: string;
     connections: number;
 }
 
@@ -76,7 +77,7 @@ export class DependencyGraphView {
         await this.provider.updateDependencies();
         const dependencies = await this.provider.getDependencies();
         const uniqueDirectories = await this.provider.getUniqueDirectories();
-        const graphData = this.convertToGraphData(dependencies, uniqueDirectories);
+        const graphData = await this.convertToGraphData(dependencies, uniqueDirectories);
         
         this.panel.webview.html = await this.getWebviewContent(graphData);
 
@@ -87,7 +88,7 @@ export class DependencyGraphView {
         });
     }
 
-    private convertToGraphData(dependencies: Map<string, string[]>, uniqueDirectories: string[]): GraphData {
+    private async convertToGraphData(dependencies: Map<string, string[]>, uniqueDirectories: string[]): Promise<GraphData> {
         const nodes: GraphNode[] = [];
         const links: GraphLink[] = [];
         const nodeMap = new Map<string, boolean>();
@@ -105,17 +106,21 @@ export class DependencyGraphView {
             }
         }
 
-        // ノードの作成
+        // ノードの作成（非同期処理を含む）
         for (const filePath of nodeMap.keys()) {
             const relativePath = path.relative(workspaceRoot, filePath);
             const shortPath = path.basename(filePath);
             const dirPath = path.dirname(relativePath);
+            
+            // ファイルの説明を取得
+            const description = await (this.provider as any).getFileDescription(filePath);
             
             nodes.push({
                 id: filePath,
                 name: shortPath,
                 fullPath: filePath,
                 dirPath: dirPath === '.' ? '' : dirPath,
+                description,
                 connections: (dependencies.get(filePath)?.length || 0) +
                     Array.from(dependencies.values()).filter(deps => deps.includes(filePath)).length
             });
@@ -194,6 +199,12 @@ export class DependencyGraphView {
                 <div id="graph"></div>
                 <div class="tooltip"></div>
                 <div class="controls">
+                    <button id="toggleFilters" class="toggle-filters-button">
+                        <span class="icon">⚙️</span>
+                    </button>
+                    <div class="filter-container">
+                        <!-- フィルターコンテンツはscript.tsのcreateFilterControls()で動的に生成されます -->
+                    </div>
                     <button id="toggleForce" class="control-button">
                         <span class="icon">🔗</span>
                     </button>
@@ -209,7 +220,7 @@ export class DependencyGraphView {
             await this.provider.updateDependencies();
             const dependencies = await this.provider.getDependencies();
             const uniqueDirectories = await this.provider.getUniqueDirectories();
-            const graphData = this.convertToGraphData(dependencies, uniqueDirectories);
+            const graphData = await this.convertToGraphData(dependencies, uniqueDirectories);
             
             this.panel.webview.postMessage({ 
                 command: 'updateDependencyGraph', 

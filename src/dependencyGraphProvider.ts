@@ -3,6 +3,7 @@ import { FileCollector } from './utils/fileCollector';
 import { DependencyAnalyzer } from './utils/dependencyAnalyzer';
 import { PathResolver } from './utils/pathResolver';
 import * as path from 'path';
+import * as fs from 'fs';
 
 export class DependencyGraphProvider {
     private dependencies: Map<string, Set<string>> = new Map();
@@ -53,6 +54,53 @@ export class DependencyGraphProvider {
                 this.reverseDependencies.get(dep)!.add(file);
             });
         });
+    }
+
+    private async getFileDescription(filePath: string): Promise<string | undefined> {
+        try {
+            const content = await fs.promises.readFile(filePath, 'utf-8');
+            const lines = content.split('\n');
+            
+            // ファイルの先頭のコメントを探す
+            let description = '';
+            let isComment = false;
+            
+            for (let i = 0; i < Math.min(20, lines.length); i++) {
+                const line = lines[i].trim();
+                
+                // 複数行コメントの開始を検出
+                if (line.startsWith('/*') || line.startsWith('/**')) {
+                    isComment = true;
+                    description += line.replace(/^\/\*+/, '').trim() + '\n';
+                    continue;
+                }
+                
+                // 複数行コメントの終了を検出
+                if (isComment && line.includes('*/')) {
+                    isComment = false;
+                    description += line.replace(/\*+\/$/, '').trim();
+                    break;
+                }
+                
+                // 複数行コメントの中身
+                if (isComment) {
+                    description += line.replace(/^\*/, '').trim() + '\n';
+                    continue;
+                }
+                
+                // 単一行コメントを検出
+                if (line.startsWith('//')) {
+                    description += line.replace(/^\/\//, '').trim() + '\n';
+                } else if (!line.startsWith('import') && line !== '') {
+                    break;
+                }
+            }
+            
+            return description.trim() || undefined;
+        } catch (error) {
+            console.error(`Error reading file description for ${filePath}:`, error);
+            return undefined;
+        }
     }
 
     public async getDependencies(): Promise<Map<string, string[]>> {

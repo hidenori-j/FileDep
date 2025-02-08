@@ -4,14 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>依存関係グラフ</title>
-    <script src="https://d3js.org/d3.v7.min.js"></script>
-    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
     <link rel="stylesheet" href="./style.css">
 </head>
 <body>
     <div id="graph"></div>
     <div class="tooltip"></div>
     <div class="controls">
+        <button id="toggleFilters" class="toggle-filters-button">
+            <span class="icon">⚙️</span>
+        </button>
+        <div class="filter-container">
+            <!-- フィルターコンテンツはscript.tsのcreateFilterControls()で動的に生成されます -->
+        </div>
         <button id="toggleForce" class="control-button">
             <span class="icon">🔗</span>
         </button>
@@ -20,6 +24,10 @@
             CSS表示
         </label>
     </div>
-    <script src="./script.js" defer></script>
+    <!-- 外部スクリプトを先に読み込む -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <!-- アプリケーションのスクリプトを最後に読み込む -->
+    <script src="./script.js"></script>
 </body>
 </html> 

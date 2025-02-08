@@ -24,6 +24,7 @@ interface GraphNode {
     y?: number;
     fx?: number | null;
     fy?: number | null;
+    description?: string;
 }
 
 // グラフリンクの型定義
@@ -59,7 +60,9 @@ let graphData: GraphData;
 let config: GraphConfig;
 let initialExtensions: ExtensionConfig[] = [];  // 初期の拡張子リストを保持
 let toggleForceButton: HTMLButtonElement;
+let toggleFiltersButton: HTMLButtonElement;
 let svg: d3.Selection<SVGGElement, unknown, HTMLElement, any>;
+let isFiltersVisible = true;
 
 // 色生成のためのヘルパー関数を更新
 const directoryColors = new Map<string, string>();
@@ -352,7 +355,16 @@ function initializeGraph(data: GraphData): void {
             tooltip.transition()
                 .duration(200)
                 .style('opacity', .9);
-            tooltip.html(d.dirPath || '')
+            
+            // ツールチップの内容を更新
+            const tooltipContent = `
+                <div class="tooltip-content">
+                    <div class="tooltip-path">${d.dirPath || ''}</div>
+                    ${d.description ? `<div class="tooltip-description">${d.description}</div>` : ''}
+                </div>
+            `;
+            
+            tooltip.html(tooltipContent)
                 .style('left', (event.pageX + 10) + 'px')
                 .style('top', (event.pageY - 28) + 'px');
         })
@@ -441,6 +453,17 @@ function handleToggleForce(): void {
     }
 }
 
+function handleToggleFilters(): void {
+    isFiltersVisible = !isFiltersVisible;
+    const filterContainer = document.querySelector('.filter-container');
+    const controls = document.querySelector('.controls');
+    
+    if (filterContainer && controls) {
+        filterContainer.classList.toggle('hidden', !isFiltersVisible);
+        controls.classList.toggle('filters-hidden', !isFiltersVisible);
+    }
+}
+
 function cleanup(): void {
     if (simulation) {
         simulation.stop();
@@ -449,6 +472,7 @@ function cleanup(): void {
     
     window.removeEventListener('resize', handleResize);
     toggleForceButton?.removeEventListener('click', handleToggleForce);
+    toggleFiltersButton?.removeEventListener('click', handleToggleFilters);
 }
 
 window.addEventListener('unload', cleanup);
@@ -882,9 +906,6 @@ function handleDirectoryToggle(directory: string, checked: boolean) {
             targetDir.enabled = checked;
         }
     }
-
-    // ノードの表示/非表示を更新
-    updateNodeVisibility();
 }
 
 // ノードとリンクの表示/非表示を更新する関数
@@ -938,7 +959,7 @@ function isDirectoryEnabled(dirPath: string): boolean {
 }
 
 // メインの初期化関数
-window.addEventListener('load', () => {
+function initializeApp() {
     try {
         const graphDataElement = document.getElementById('graphData');
         if (!graphDataElement) {
@@ -971,10 +992,17 @@ window.addEventListener('load', () => {
         
         width = window.innerWidth;
         height = window.innerHeight;
-        toggleForceButton = document.getElementById('toggleForce') as HTMLButtonElement;
-        if (!toggleForceButton) {
-            throw new Error('Toggle force button not found');
+
+        // DOM要素の取得を確実に行う
+        const forceButton = document.getElementById('toggleForce');
+        const filtersButton = document.getElementById('toggleFilters');
+
+        if (!forceButton || !filtersButton) {
+            throw new Error('Required buttons not found in DOM');
         }
+
+        toggleForceButton = forceButton as HTMLButtonElement;
+        toggleFiltersButton = filtersButton as HTMLButtonElement;
         
         // 先にディレクトリの色を初期化
         initializeDirectoryColors();
@@ -989,7 +1017,15 @@ window.addEventListener('load', () => {
         // イベントリスナーの設定
         window.addEventListener('resize', handleResize);
         toggleForceButton.addEventListener('click', handleToggleForce);
+        toggleFiltersButton.addEventListener('click', handleToggleFilters);
     } catch (error) {
         console.error('Failed to initialize graph:', error);
+        vscode.postMessage({
+            command: 'error',
+            message: `グラフの初期化中にエラーが発生しました: ${error}`
+        });
     }
-}); 
+}
+
+// DOMContentLoadedイベントで初期化を行う
+document.addEventListener('DOMContentLoaded', initializeApp); 
